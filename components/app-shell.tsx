@@ -1,32 +1,54 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import {
   ChartPieIcon,
   ClipboardCheckIcon,
+  CommandIcon,
   FlameIcon,
+  HeartIcon,
+  LayoutGridIcon,
   MoonIcon,
   PackageIcon,
   ScanBarcodeIcon,
+  SearchIcon,
   SunIcon,
   UsersIcon,
-  HeartIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { RESTAURANT } from '@/lib/data'
+import { useAlba } from '@/lib/store'
 import { SyncPill } from '@/components/sync-pill'
+import { Notifs } from '@/components/notifs'
+import { Palette } from '@/components/palette'
+import { Sheet } from '@/components/kit'
 
-const NAV = [
+type Entree = {
+  href: string
+  label: string
+  short: string
+  icon: typeof ChartPieIcon
+  /** clé d'alerte à afficher en pastille */
+  alerte?: 'cuisine' | 'stock' | 'haccp'
+}
+
+/** Les 4 écrans du service quotidien restent au pouce ; le reste passe dans « Plus ». */
+const PRINCIPAL: Entree[] = [
   { href: '/', label: 'Pilotage', short: 'Pilotage', icon: ChartPieIcon },
   { href: '/caisse', label: 'Caisse', short: 'Caisse', icon: ScanBarcodeIcon },
-  { href: '/cuisine', label: 'Cuisine', short: 'Cuisine', icon: FlameIcon },
-  { href: '/stock', label: 'Stock', short: 'Stock', icon: PackageIcon },
-  { href: '/hygiene', label: 'Hygiène', short: 'Hygiène', icon: ClipboardCheckIcon },
+  { href: '/cuisine', label: 'Cuisine', short: 'Cuisine', icon: FlameIcon, alerte: 'cuisine' },
+  { href: '/stock', label: 'Stock', short: 'Stock', icon: PackageIcon, alerte: 'stock' },
+]
+
+const SECONDAIRE: Entree[] = [
+  { href: '/hygiene', label: 'Hygiène', short: 'Hygiène', icon: ClipboardCheckIcon, alerte: 'haccp' },
   { href: '/equipe', label: 'Équipe', short: 'Équipe', icon: UsersIcon },
   { href: '/clients', label: 'Clients', short: 'Clients', icon: HeartIcon },
 ]
+
+export const NAV_COMPLET = [...PRINCIPAL, ...SECONDAIRE]
 
 function AlbaMark({ className }: { className?: string }) {
   return (
@@ -42,13 +64,56 @@ function AlbaMark({ className }: { className?: string }) {
   )
 }
 
+function estActif(pathname: string, href: string) {
+  return href === '/' ? pathname === '/' : pathname.startsWith(href)
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { indicateurs, etat } = useAlba()
   const [clair, setClair] = useState(false)
+  const [plus, setPlus] = useState(false)
+  const [palette, setPalette] = useState(false)
+
+  // Préférence de luminosité conservée : la terrasse et la cuisine
+  // n'ont pas les mêmes besoins.
+  useEffect(() => {
+    const enregistre = window.localStorage.getItem('alba:clair')
+    if (enregistre === '1') setClair(true)
+  }, [])
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', clair)
+    window.localStorage.setItem('alba:clair', clair ? '1' : '0')
   }, [clair])
+
+  // Cmd/Ctrl + K : aller n'importe où sans lâcher le clavier
+  useEffect(() => {
+    const onTouche = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPalette((v) => !v)
+      }
+    }
+    document.addEventListener('keydown', onTouche)
+    return () => document.removeEventListener('keydown', onTouche)
+  }, [])
+
+  useEffect(() => {
+    setPlus(false)
+  }, [pathname])
+
+  const compteurs: Record<string, number> = {
+    cuisine: indicateurs.enCuisine,
+    stock: indicateurs.alertesStock.length + indicateurs.peremptions.length,
+    haccp: indicateurs.haccpRestant,
+  }
+
+  const alertesSecondaires = SECONDAIRE.reduce(
+    (n, e) => n + (e.alerte ? compteurs[e.alerte] : 0),
+    0,
+  )
 
   return (
     <div className="flex min-h-dvh flex-col lg:flex-row">
@@ -60,25 +125,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </a>
 
       {/* Rail latéral — desktop */}
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-6 border-r border-border bg-card/40 px-3 py-5 lg:flex">
+      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-5 border-r border-border bg-card/40 px-3 py-5 lg:flex">
         <div className="flex items-center gap-3 px-2">
           <AlbaMark />
-          <div className="flex flex-col leading-tight">
+          <div className="flex min-w-0 flex-col leading-tight">
             <span className="font-display text-lg font-semibold tracking-tight">
               alba
             </span>
-            <span className="text-xs text-muted-foreground">
+            <span className="truncate text-xs text-muted-foreground">
               {RESTAURANT.nom}
             </span>
           </div>
         </div>
 
+        <button
+          type="button"
+          onClick={() => setPalette(true)}
+          className="flex items-center gap-2 rounded-lg border border-border bg-background/40 px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        >
+          <SearchIcon className="size-3.5" />
+          Rechercher une action
+          <kbd className="ml-auto flex items-center gap-0.5 rounded border border-border px-1 py-0.5 text-[10px]">
+            <CommandIcon className="size-2.5" />K
+          </kbd>
+        </button>
+
         <nav aria-label="Navigation principale" className="flex flex-col gap-1">
-          {NAV.map((item) => {
-            const actif =
-              item.href === '/'
-                ? pathname === '/'
-                : pathname.startsWith(item.href)
+          {NAV_COMPLET.map((item) => {
+            const actif = estActif(pathname, item.href)
+            const compte = item.alerte ? compteurs[item.alerte] : 0
             return (
               <Link
                 key={item.href}
@@ -98,8 +173,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   )}
                 />
                 {item.label}
-                {actif && (
-                  <span className="ml-auto size-1.5 rounded-full bg-primary" />
+                {compte > 0 ? (
+                  <span
+                    className={cn(
+                      'ml-auto min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-semibold tnum',
+                      item.alerte === 'cuisine'
+                        ? 'bg-primary/20 text-primary'
+                        : 'bg-destructive/20 text-destructive',
+                    )}
+                  >
+                    {compte}
+                  </span>
+                ) : (
+                  actif && (
+                    <span className="ml-auto size-1.5 rounded-full bg-primary" />
+                  )
                 )}
               </Link>
             )
@@ -120,9 +208,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="flex size-7 items-center justify-center rounded-full bg-primary/20 text-[11px] font-semibold text-primary">
               FN
             </span>
-            <div className="flex flex-col leading-tight">
-              <span className="text-xs font-medium">{RESTAURANT.gerante}</span>
-              <span className="text-[11px] text-muted-foreground">
+            <div className="flex min-w-0 flex-col leading-tight">
+              <span className="truncate text-xs font-medium">
+                {RESTAURANT.gerante}
+              </span>
+              <span className="truncate text-[11px] text-muted-foreground">
                 {RESTAURANT.quartier}
               </span>
             </div>
@@ -133,9 +223,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* En-tête mobile */}
       <header className="glass sticky top-0 z-40 flex items-center gap-3 border-b border-border px-4 py-3 lg:hidden">
         <AlbaMark className="size-8 rounded-lg text-base" />
-        <div className="flex flex-col leading-tight">
+        <div className="flex min-w-0 flex-col leading-tight">
           <span className="font-display text-base font-semibold">alba</span>
-          <span className="text-[11px] text-muted-foreground">
+          <span className="truncate text-[11px] text-muted-foreground">
             {RESTAURANT.nom}
           </span>
         </div>
@@ -152,39 +242,121 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main id="contenu" className="min-w-0 flex-1 pb-24 lg:pb-0">
+      <main id="contenu" className="min-w-0 flex-1 pb-28 lg:pb-0">
         {children}
       </main>
 
-      {/* Barre d'onglets mobile — zones tactiles généreuses, usage à une main */}
+      {/* Barre d'onglets mobile — 5 cibles larges, atteignables au pouce */}
       <nav
         aria-label="Navigation principale"
-        className="glass fixed inset-x-0 bottom-0 z-40 flex items-stretch gap-0.5 border-t border-border px-1 pb-[env(safe-area-inset-bottom)] pt-1 lg:hidden"
+        className="glass fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border px-1 pb-[env(safe-area-inset-bottom)] pt-1 lg:hidden"
       >
-        {NAV.map((item) => {
-          const actif =
-            item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
+        {PRINCIPAL.map((item) => {
+          const actif = estActif(pathname, item.href)
+          const compte = item.alerte ? compteurs[item.alerte] : 0
           return (
             <Link
               key={item.href}
               href={item.href}
               aria-current={actif ? 'page' : undefined}
               className={cn(
-                'flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-colors',
+                'relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg py-2.5 text-[11px] font-medium transition-colors',
                 actif ? 'text-primary' : 'text-muted-foreground',
               )}
             >
-              <item.icon
-                className={cn(
-                  'size-5 transition-transform duration-300 ease-[var(--ease-spring)]',
-                  actif && 'scale-110',
+              <span className="relative">
+                <item.icon
+                  className={cn(
+                    'size-6 transition-transform duration-300 ease-[var(--ease-spring)]',
+                    actif && 'scale-110',
+                  )}
+                />
+                {compte > 0 && (
+                  <span
+                    className={cn(
+                      'absolute -right-2 -top-1.5 min-w-4 rounded-full px-1 text-center text-[9px] font-bold leading-4 tnum',
+                      item.alerte === 'cuisine'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-destructive text-destructive-foreground',
+                    )}
+                  >
+                    {compte}
+                  </span>
                 )}
-              />
+              </span>
               <span className="truncate">{item.short}</span>
             </Link>
           )
         })}
+
+        <button
+          type="button"
+          onClick={() => setPlus(true)}
+          className="relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg py-2.5 text-[11px] font-medium text-muted-foreground"
+        >
+          <span className="relative">
+            <LayoutGridIcon className="size-6" />
+            {alertesSecondaires > 0 && (
+              <span className="absolute -right-2 -top-1.5 min-w-4 rounded-full bg-destructive px-1 text-center text-[9px] font-bold leading-4 text-destructive-foreground tnum">
+                {alertesSecondaires}
+              </span>
+            )}
+          </span>
+          <span>Plus</span>
+        </button>
       </nav>
+
+      {/* Feuille « Plus » — accès aux écrans de fond sans encombrer la barre */}
+      <Sheet
+        ouvert={plus}
+        onFermer={() => setPlus(false)}
+        titre="Le reste du restaurant"
+        sous="Ce qui ne se gère pas en pleine rush."
+      >
+        <div className="flex flex-col gap-2">
+          {SECONDAIRE.map((item) => {
+            const compte = item.alerte ? compteurs[item.alerte] : 0
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 transition-transform duration-300 ease-[var(--ease-spring)] active:scale-[0.98]"
+              >
+                <item.icon className="size-5 text-primary" />
+                <span className="text-sm font-medium">{item.label}</span>
+                {compte > 0 && (
+                  <span className="ml-auto rounded-full bg-destructive/20 px-2 py-0.5 text-[11px] font-semibold text-destructive tnum">
+                    {compte} à faire
+                  </span>
+                )}
+              </Link>
+            )
+          })}
+          <div className="mt-2 flex items-center gap-3 rounded-xl bg-secondary/50 p-4">
+            <span className="flex size-9 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
+              FN
+            </span>
+            <div className="flex min-w-0 flex-col leading-tight">
+              <span className="text-sm font-medium">{RESTAURANT.gerante}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {RESTAURANT.quartier}
+              </span>
+            </div>
+          </div>
+        </div>
+      </Sheet>
+
+      <Palette
+        ouvert={palette}
+        onFermer={() => setPalette(false)}
+        onAller={(href) => {
+          setPalette(false)
+          router.push(href)
+        }}
+        panier={etat.panier.length}
+      />
+
+      <Notifs />
     </div>
   )
 }
