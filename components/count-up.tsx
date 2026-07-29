@@ -16,14 +16,22 @@ export function CountUp({
 }) {
   const [affiche, setAffiche] = useState(0)
   const frame = useRef(0)
+  // On repart toujours du chiffre déjà lu à l'écran : quand une vente tombe,
+  // le compteur glisse de l'ancien montant au nouveau au lieu de rechuter à zéro.
+  const depart = useRef(0)
 
   useEffect(() => {
+    const de = depart.current
+    const vers = valeur
+    if (de === vers) return
     const debut = performance.now()
     const boucle = (t: number) => {
       const p = Math.min((t - debut) / duree, 1)
       // easing organique (easeOutExpo)
       const e = p === 1 ? 1 : 1 - Math.pow(2, -10 * p)
-      setAffiche(valeur * e)
+      const v = de + (vers - de) * e
+      depart.current = v
+      setAffiche(v)
       if (p < 1) frame.current = requestAnimationFrame(boucle)
     }
     frame.current = requestAnimationFrame(boucle)
