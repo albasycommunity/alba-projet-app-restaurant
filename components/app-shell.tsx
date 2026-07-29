@@ -10,8 +10,10 @@ import {
   FlameIcon,
   HeartIcon,
   LayoutGridIcon,
+  LifeBuoyIcon,
   MoonIcon,
   PackageIcon,
+  ReceiptTextIcon,
   ScanBarcodeIcon,
   SearchIcon,
   SunIcon,
@@ -46,6 +48,8 @@ const SECONDAIRE: Entree[] = [
   { href: '/hygiene', label: 'Hygiène', short: 'Hygiène', icon: ClipboardCheckIcon, alerte: 'haccp' },
   { href: '/equipe', label: 'Équipe', short: 'Équipe', icon: UsersIcon },
   { href: '/clients', label: 'Clients', short: 'Clients', icon: HeartIcon },
+  { href: '/abonnement', label: 'Abonnement', short: 'Abonnement', icon: ReceiptTextIcon },
+  { href: '/console', label: 'Console alba', short: 'Console', icon: LifeBuoyIcon },
 ]
 
 export const NAV_COMPLET = [...PRINCIPAL, ...SECONDAIRE]

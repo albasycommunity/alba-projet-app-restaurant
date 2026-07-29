@@ -7,7 +7,9 @@ import {
   CornerDownLeftIcon,
   FlameIcon,
   HeartIcon,
+  LifeBuoyIcon,
   PackageIcon,
+  ReceiptTextIcon,
   ScanBarcodeIcon,
   SearchIcon,
   UsersIcon,
@@ -71,6 +73,21 @@ const ACTIONS: Commande[] = [
     detail: 'Chiffre d’affaires, marges, affluence',
     icon: ChartPieIcon,
     motsCles: 'pilotage dashboard chiffre affaires ca rapport marge',
+  },
+  {
+    href: '/abonnement',
+    titre: 'Gérer l’abonnement',
+    detail: 'Plans, factures, paiement Wave ou Orange Money',
+    icon: ReceiptTextIcon,
+    motsCles:
+      'abonnement facture plan prix paiement wave orange money essentiel pro groupe',
+  },
+  {
+    href: '/console',
+    titre: 'Ouvrir la console alba',
+    detail: 'Parc client, MRR, comptes à risque',
+    icon: LifeBuoyIcon,
+    motsCles: 'console admin super-admin mrr churn tenant support parc client',
   },
 ]
 
