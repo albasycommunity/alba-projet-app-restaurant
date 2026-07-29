@@ -363,19 +363,66 @@ export type Ingredient = {
   dlc?: string
   joursRestants?: number
   fournisseur: string
+  /** prix d'achat par unité, en FCFA — base du calcul de food cost */
+  prixUnitaire: number
+  /** conditionnement d'achat habituel chez le fournisseur */
+  lot: number
+  /** numéro de lot de la dernière réception, pour la traçabilité HACCP */
+  lotRecu?: string
 }
 
 export const STOCK: Ingredient[] = [
-  { id: 'i1', nom: 'Riz brisé parfumé', stock: 48, unite: 'kg', seuil: 25, fournisseur: 'Marché Kermel' },
-  { id: 'i2', nom: 'Thiof frais', stock: 6, unite: 'kg', seuil: 12, dlc: 'Demain', joursRestants: 1, fournisseur: 'Soumbédioune' },
-  { id: 'i3', nom: 'Huile d\u2019arachide', stock: 22, unite: 'L', seuil: 15, fournisseur: 'Sonacos' },
-  { id: 'i4', nom: 'Oignons', stock: 34, unite: 'kg', seuil: 20, fournisseur: 'Potou' },
-  { id: 'i5', nom: 'Poulet fermier', stock: 9, unite: 'kg', seuil: 15, dlc: '2 jours', joursRestants: 2, fournisseur: 'Sedima' },
-  { id: 'i6', nom: 'Mouton (épaule)', stock: 14, unite: 'kg', seuil: 10, dlc: '3 jours', joursRestants: 3, fournisseur: 'Boucherie Ndiaye' },
-  { id: 'i7', nom: 'Bissap séché', stock: 3, unite: 'kg', seuil: 5, fournisseur: 'Marché Tilène' },
-  { id: 'i8', nom: 'Pâte d\u2019arachide', stock: 11, unite: 'kg', seuil: 8, fournisseur: 'Marché Kermel' },
-  { id: 'i9', nom: 'Tomate concentrée', stock: 26, unite: 'boîtes', seuil: 18, fournisseur: 'Dieg Bou Diar' },
+  { id: 'i1', nom: 'Riz brisé parfumé', stock: 48, unite: 'kg', seuil: 25, fournisseur: 'Marché Kermel', prixUnitaire: 650, lot: 25, lotRecu: 'RZ-1184' },
+  { id: 'i2', nom: 'Thiof frais', stock: 6, unite: 'kg', seuil: 12, dlc: 'Demain', joursRestants: 1, fournisseur: 'Soumbédioune', prixUnitaire: 4200, lot: 10, lotRecu: 'TH-0921' },
+  { id: 'i3', nom: 'Huile d\u2019arachide', stock: 22, unite: 'L', seuil: 15, fournisseur: 'Sonacos', prixUnitaire: 1450, lot: 20, lotRecu: 'HA-3307' },
+  { id: 'i4', nom: 'Oignons', stock: 34, unite: 'kg', seuil: 20, fournisseur: 'Potou', prixUnitaire: 450, lot: 25, lotRecu: 'OG-2210' },
+  { id: 'i5', nom: 'Poulet fermier', stock: 9, unite: 'kg', seuil: 15, dlc: '2 jours', joursRestants: 2, fournisseur: 'Sedima', prixUnitaire: 2900, lot: 15, lotRecu: 'PL-7745' },
+  { id: 'i6', nom: 'Mouton (épaule)', stock: 14, unite: 'kg', seuil: 10, dlc: '3 jours', joursRestants: 3, fournisseur: 'Boucherie Ndiaye', prixUnitaire: 5200, lot: 10, lotRecu: 'MT-0448' },
+  { id: 'i7', nom: 'Bissap séché', stock: 3, unite: 'kg', seuil: 5, fournisseur: 'Marché Tilène', prixUnitaire: 2400, lot: 5, lotRecu: 'BS-1902' },
+  { id: 'i8', nom: 'Pâte d\u2019arachide', stock: 11, unite: 'kg', seuil: 8, fournisseur: 'Marché Kermel', prixUnitaire: 1800, lot: 10, lotRecu: 'PA-6612' },
+  { id: 'i9', nom: 'Tomate concentrée', stock: 26, unite: 'boîtes', seuil: 18, fournisseur: 'Dieg Bou Diar', prixUnitaire: 700, lot: 24, lotRecu: 'TC-5580' },
 ]
+
+/**
+ * Coût matière réel d'un plat, reconstitué depuis sa recette et le prix
+ * d'achat des ingrédients. Les plats sans recette détaillée (boissons
+ * achetées prêtes) retombent sur leur food cost théorique.
+ */
+export function coutMatiere(plat: Plat, stock: Ingredient[] = STOCK) {
+  if (plat.recette.length === 0) return Math.round((plat.foodCost / 100) * plat.prix)
+  return Math.round(
+    plat.recette.reduce((total, ligne) => {
+      const ing = stock.find((i) => i.id === ligne.ingredientId)
+      return total + (ing ? ing.prixUnitaire * ligne.qte : 0)
+    }, 0),
+  )
+}
+
+/** Food cost réel en % du prix de vente. */
+export function foodCostReel(plat: Plat, stock: Ingredient[] = STOCK) {
+  return Math.round((coutMatiere(plat, stock) / plat.prix) * 100)
+}
+
+/** Seuil de vigilance : au-delà, la marge du plat n'est plus tenable. */
+export const SEUIL_FOOD_COST = 40
+
+export type MomentService = 'Matin' | 'Après midi' | 'Soir'
+
+export const MOMENTS: MomentService[] = ['Matin', 'Après midi', 'Soir']
+
+/** À partir de quelle heure chaque moment de service devient l'actualité. */
+export const HEURE_MOMENT: Record<MomentService, number> = {
+  Matin: 6,
+  'Après midi': 14,
+  Soir: 18,
+}
+
+export function momentCourant(date = new Date()): MomentService {
+  const h = date.getHours()
+  if (h >= HEURE_MOMENT.Soir) return 'Soir'
+  if (h >= HEURE_MOMENT['Après midi']) return 'Après midi'
+  return 'Matin'
+}
 
 export type TacheHaccp = {
   id: string
@@ -385,18 +432,26 @@ export type TacheHaccp = {
   heure?: string
   photo: boolean
   /** moment du service concerné, pour ne montrer que ce qui compte maintenant */
-  moment: 'Matin' | 'Après midi' | 'Soir'
+  moment: MomentService
   /** par qui la tâche a été validée */
   par?: string
+  /** relevé chiffré attendu (température, pH…) et sa plage de conformité */
+  mesure?: { unite: string; min?: number; max: number; libelle: string }
+  /** valeur saisie lors de la validation */
+  valeur?: number
+  /** point critique : bloque l'ouverture du service s'il n'est pas fait */
+  critique?: boolean
 }
 
 export const HACCP: TacheHaccp[] = [
-  { id: 'h1', libelle: 'Température chambre froide', detail: 'Relevé matin — cible ≤ 4 °C', faite: true, heure: '07:12', photo: true, moment: 'Matin', par: 'Ibrahima Fall' },
-  { id: 'h3', libelle: 'Réception fournisseur', detail: 'Contrôle lot + température à l\u2019arrivée', faite: true, heure: '09:38', photo: true, moment: 'Matin', par: 'Awa Diop' },
-  { id: 'h2', libelle: 'Nettoyage plan de travail', detail: 'Désinfection après service midi', faite: true, heure: '15:04', photo: true, moment: 'Après midi', par: 'Ibrahima Fall' },
-  { id: 'h4', libelle: 'Huile de friture', detail: 'Contrôle couleur et filtration', faite: false, photo: false, moment: 'Après midi' },
-  { id: 'h5', libelle: 'Température vitrine', detail: 'Relevé avant service du soir', faite: false, photo: false, moment: 'Soir' },
-  { id: 'h6', libelle: 'Évacuation déchets', detail: 'Bacs lavés et désinfectés', faite: false, photo: false, moment: 'Soir' },
+  { id: 'h1', libelle: 'Température chambre froide', detail: 'Relevé à l’ouverture — la chaîne du froid ne pardonne pas.', faite: true, heure: '07:12', photo: true, moment: 'Matin', par: 'Ibrahima Fall', critique: true, mesure: { unite: '°C', max: 4, libelle: 'Température relevée' }, valeur: 3 },
+  { id: 'h3', libelle: 'Réception fournisseur', detail: 'Contrôle du lot et de la température à l’arrivée du camion.', faite: true, heure: '09:38', photo: true, moment: 'Matin', par: 'Awa Diop', critique: true, mesure: { unite: '°C', max: 6, libelle: 'Température à l’arrivée' }, valeur: 5 },
+  { id: 'h7', libelle: 'Lavage des mains', detail: 'Passage de toute l’équipe avant la mise en place.', faite: false, photo: false, moment: 'Matin' },
+  { id: 'h2', libelle: 'Nettoyage plan de travail', detail: 'Désinfection complète après le service de midi.', faite: true, heure: '15:04', photo: true, moment: 'Après midi', par: 'Ibrahima Fall' },
+  { id: 'h4', libelle: 'Huile de friture', detail: 'Contrôle de la couleur, filtration si elle a foncé.', faite: false, photo: false, moment: 'Après midi', mesure: { unite: '% polaires', max: 25, libelle: 'Composés polaires' } },
+  { id: 'h5', libelle: 'Température vitrine chaude', detail: 'Relevé avant le service du soir.', faite: false, photo: false, moment: 'Soir', critique: true, mesure: { unite: '°C', min: 63, max: 90, libelle: 'Température au cœur' } },
+  { id: 'h6', libelle: 'Évacuation des déchets', detail: 'Bacs sortis, lavés et désinfectés.', faite: false, photo: false, moment: 'Soir' },
+  { id: 'h8', libelle: 'Fermeture cuisine', detail: 'Gaz coupé, sols lavés, chambre froide refermée.', faite: false, photo: false, moment: 'Soir', critique: true },
 ]
 
 export type Employe = {

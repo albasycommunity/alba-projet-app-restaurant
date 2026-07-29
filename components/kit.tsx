@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { XIcon } from 'lucide-react'
+import { MinusIcon, PlusIcon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function PageHeader({
@@ -25,6 +25,74 @@ export function PageHeader({
       </div>
       {action}
     </header>
+  )
+}
+
+/** Gouttière commune à tous les écrans : le contenu ne colle jamais au bord. */
+export function Contenu({
+  className,
+  children,
+}: {
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className={cn('px-4 sm:px-6 lg:px-8', className)}>{children}</div>
+  )
+}
+
+/**
+ * Compteur tactile : deux grosses cibles et une valeur au milieu.
+ * Utilisable d'une main, sans clavier, en cuisine.
+ */
+export function Stepper({
+  valeur,
+  onChange,
+  pas = 1,
+  min = 0,
+  max = 9999,
+  unite,
+  libelle,
+}: {
+  valeur: number
+  onChange: (v: number) => void
+  pas?: number
+  min?: number
+  max?: number
+  unite?: string
+  libelle: string
+}) {
+  const borner = (v: number) =>
+    Math.min(max, Math.max(min, +v.toFixed(2)))
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        aria-label={`Diminuer ${libelle}`}
+        onClick={() => onChange(borner(valeur - pas))}
+        disabled={valeur <= min}
+        className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-lg font-semibold transition-transform duration-200 ease-[var(--ease-spring)] active:scale-90 disabled:opacity-35"
+      >
+        <MinusIcon className="size-4" />
+      </button>
+      <span className="flex-1 text-center font-display text-lg font-semibold tnum">
+        {valeur}
+        {unite && (
+          <span className="ml-1 text-sm font-normal text-muted-foreground">
+            {unite}
+          </span>
+        )}
+      </span>
+      <button
+        type="button"
+        aria-label={`Augmenter ${libelle}`}
+        onClick={() => onChange(borner(valeur + pas))}
+        disabled={valeur >= max}
+        className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-primary/40 bg-primary/15 text-lg font-semibold text-primary transition-transform duration-200 ease-[var(--ease-spring)] active:scale-90 disabled:opacity-35"
+      >
+        <PlusIcon className="size-4" />
+      </button>
+    </div>
   )
 }
 

@@ -264,6 +264,36 @@
   animation: alba-rise 0.5s var(--ease-organic) both;
 }
 
+/* Impression : seul le registre HACCP sort sur la feuille, en noir sur blanc. */
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  body * {
+    visibility: hidden;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+  #registre-imprimable,
+  #registre-imprimable * {
+    visibility: visible;
+    color: #000 !important;
+    background: transparent !important;
+    border-color: #999 !important;
+  }
+  #registre-imprimable {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+  }
+  #registre-imprimable img {
+    max-width: 40px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

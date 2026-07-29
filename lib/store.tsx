@@ -17,6 +17,7 @@ import {
   MENU,
   OBJECTIF_JOUR,
   STOCK,
+  coutMatiere,
   commandesInitiales,
   type ClientFidele,
   type Commande,
@@ -37,12 +38,38 @@ import {
 
 export type LignePanier = LigneCommande & { note?: string }
 
+/** Une sortie de stock qui n'est pas une vente : casse, péremption, geste commercial. */
+export type Perte = {
+  id: string
+  ingredientId: string
+  nom: string
+  quantite: number
+  unite: string
+  motif: string
+  cout: number
+  heure: string
+}
+
+/** Une entrée de stock enregistrée à la réception fournisseur. */
+export type Reception = {
+  id: string
+  ingredientId: string
+  nom: string
+  quantite: number
+  unite: string
+  lot: string
+  fournisseur: string
+  heure: string
+}
+
 export type Etat = {
   commandes: Commande[]
   stock: Ingredient[]
   haccp: TacheHaccp[]
   equipe: Employe[]
   clients: ClientFidele[]
+  pertes: Perte[]
+  receptions: Reception[]
   panier: LignePanier[]
   /** destination du ticket en cours de saisie */
   destination: { canal: Commande['canal']; table?: string; client?: string }
@@ -66,14 +93,31 @@ type Action =
   | { type: 'reculer'; id: string }
   | { type: 'annulerCommande'; id: string }
   | { type: 'haccpBascule'; id: string; par: string }
+  | {
+      type: 'haccpValider'
+      id: string
+      par: string
+      valeur?: number
+      photo: boolean
+    }
+  | { type: 'haccpAnnuler'; id: string }
   | { type: 'ajusterStock'; id: string; delta: number }
-  | { type: 'reapprovisionner'; id: string; quantite: number }
+  | { type: 'reapprovisionner'; id: string; quantite: number; lot?: string }
+  | { type: 'declarerPerte'; id: string; quantite: number; motif: string }
   | { type: 'pointer'; id: string }
+  | { type: 'absenter'; id: string }
+  | { type: 'formation'; id: string; progression: number }
+  | { type: 'crediterFidelite'; id: string; points: number }
+  | { type: 'recompenser'; id: string; cout: number }
   | { type: 'synchroniser' }
   | { type: 'hydrater'; etat: Etat }
   | { type: 'reinitialiser' }
 
-const CLE = 'alba:poste:v1'
+/**
+ * La version fait partie de la clé : quand la forme des données change,
+ * l'ancienne session est ignorée au lieu d'être mal relue.
+ */
+const CLE = 'alba:poste:v2'
 
 function etatInitial(): Etat {
   return {
@@ -82,6 +126,8 @@ function etatInitial(): Etat {
     haccp: HACCP.map((t) => ({ ...t })),
     equipe: EQUIPE.map((e) => ({ ...e })),
     clients: CLIENTS.map((c) => ({ ...c })),
+    pertes: [],
+    receptions: [],
     panier: [],
     destination: { canal: 'salle' },
     prochainNumero: 253,
@@ -264,6 +310,43 @@ function reducer(etat: Etat, action: Action): Etat {
         ),
       }
 
+    case 'haccpValider':
+      return {
+        ...etat,
+        haccp: etat.haccp.map((t) =>
+          t.id === action.id
+            ? {
+                ...t,
+                faite: true,
+                photo: action.photo,
+                par: action.par,
+                valeur: action.valeur,
+                heure: new Date().toLocaleTimeString('fr-FR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+              }
+            : t,
+        ),
+      }
+
+    case 'haccpAnnuler':
+      return {
+        ...etat,
+        haccp: etat.haccp.map((t) =>
+          t.id === action.id
+            ? {
+                ...t,
+                faite: false,
+                photo: false,
+                par: undefined,
+                heure: undefined,
+                valeur: undefined,
+              }
+            : t,
+        ),
+      }
+
     case 'ajusterStock':
       return {
         ...etat,
@@ -274,7 +357,16 @@ function reducer(etat: Etat, action: Action): Etat {
         ),
       }
 
-    case 'reapprovisionner':
+    case 'reapprovisionner': {
+      const ing = etat.stock.find((i) => i.id === action.id)
+      if (!ing) return etat
+      const lot =
+        action.lot ??
+        `${ing.nom.slice(0, 2).toUpperCase()}-${String(Math.floor(Math.random() * 9000) + 1000)}`
+      const heure = new Date().toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
       return {
         ...etat,
         stock: etat.stock.map((i) =>
@@ -284,8 +376,104 @@ function reducer(etat: Etat, action: Action): Etat {
                 stock: +(i.stock + action.quantite).toFixed(2),
                 dlc: undefined,
                 joursRestants: undefined,
+                lotRecu: lot,
               }
             : i,
+        ),
+        receptions: [
+          {
+            id: `r-${Date.now()}`,
+            ingredientId: ing.id,
+            nom: ing.nom,
+            quantite: action.quantite,
+            unite: ing.unite,
+            lot,
+            fournisseur: ing.fournisseur,
+            heure,
+          },
+          ...etat.receptions,
+        ],
+      }
+    }
+
+    case 'declarerPerte': {
+      const ing = etat.stock.find((i) => i.id === action.id)
+      if (!ing || action.quantite <= 0) return etat
+      const quantite = Math.min(action.quantite, ing.stock)
+      if (quantite <= 0) return etat
+      return {
+        ...etat,
+        stock: etat.stock.map((i) =>
+          i.id === action.id
+            ? { ...i, stock: +(i.stock - quantite).toFixed(2) }
+            : i,
+        ),
+        pertes: [
+          {
+            id: `pe-${Date.now()}`,
+            ingredientId: ing.id,
+            nom: ing.nom,
+            quantite,
+            unite: ing.unite,
+            motif: action.motif,
+            cout: Math.round(quantite * ing.prixUnitaire),
+            heure: new Date().toLocaleTimeString('fr-FR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          },
+          ...etat.pertes,
+        ],
+      }
+    }
+
+    case 'absenter':
+      return {
+        ...etat,
+        equipe: etat.equipe.map((e) =>
+          e.id === action.id
+            ? { ...e, statut: 'absent', arrivee: undefined }
+            : e,
+        ),
+      }
+
+    case 'formation':
+      return {
+        ...etat,
+        equipe: etat.equipe.map((e) =>
+          e.id === action.id
+            ? { ...e, formation: Math.min(100, Math.max(0, action.progression)) }
+            : e,
+        ),
+      }
+
+    case 'crediterFidelite':
+      return {
+        ...etat,
+        clients: etat.clients.map((c) =>
+          c.id === action.id
+            ? {
+                ...c,
+                points: c.points + action.points,
+                visites: c.visites + 1,
+                niveau:
+                  c.points + action.points >= 1000
+                    ? 'Or'
+                    : c.points + action.points >= 600
+                      ? 'Argent'
+                      : 'Bronze',
+              }
+            : c,
+        ),
+      }
+
+    case 'recompenser':
+      return {
+        ...etat,
+        clients: etat.clients.map((c) =>
+          c.id === action.id
+            ? { ...c, points: Math.max(0, c.points - action.cout) }
+            : c,
         ),
       }
 
@@ -333,6 +521,36 @@ export type Notif = {
   ton: 'succes' | 'info' | 'alerte'
 }
 
+/** Indicateurs recalculés à chaque vente : aucune donnée figée. */
+export type Indicateurs = {
+  caJour: number
+  tickets: number
+  panierMoyen: number
+  partObjectif: number
+  parMode: { mode: ModePaiement; montant: number; part: number }[]
+  affluence: { heure: string; ca: number }[]
+  ventesParPlat: Map<string, number>
+  consommationJour: Map<string, number>
+  autonomie: (id: string, stockRestant: number) => number
+  valeurStock: number
+  coutMatiereJour: number
+  margeJour: number
+  pertesJour: number
+  foodCostJour: number
+  reappro: {
+    ingredient: Ingredient
+    quantite: number
+    cout: number
+    jours: number
+    urgent: boolean
+  }[]
+  alertesStock: Ingredient[]
+  peremptions: Ingredient[]
+  haccpRestant: number
+  equipePresente: number
+  enCuisine: number
+}
+
 type Contexte = {
   etat: Etat
   envoyer: (a: Action) => void
@@ -341,20 +559,7 @@ type Contexte = {
   fermerNotif: (id: number) => void
   /** total du ticket en cours */
   total: number
-  /** derniers indicateurs recalculés à partir des ventes réelles */
-  indicateurs: {
-    caJour: number
-    tickets: number
-    panierMoyen: number
-    partObjectif: number
-    parMode: { mode: ModePaiement; montant: number; part: number }[]
-    affluence: { heure: string; ca: number }[]
-    ventesParPlat: Map<string, number>
-    alertesStock: Ingredient[]
-    peremptions: Ingredient[]
-    haccpRestant: number
-    enCuisine: number
-  }
+  indicateurs: Indicateurs
 }
 
 const AlbaContexte = createContext<Contexte | null>(null)
@@ -470,6 +675,62 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Consommation d'ingrédients de la journée, reconstituée depuis les ventes.
+    // C'est elle qui permet de dire combien de jours il reste avant la rupture.
+    const consommationJour = new Map<string, number>()
+    for (const plat of MENU) {
+      const vendus = ventesParPlat.get(plat.id) ?? 0
+      if (vendus === 0) continue
+      for (const r of plat.recette) {
+        consommationJour.set(
+          r.ingredientId,
+          +((consommationJour.get(r.ingredientId) ?? 0) + r.qte * vendus).toFixed(2),
+        )
+      }
+    }
+
+    /** Autonomie en jours au rythme de consommation observé aujourd'hui. */
+    const autonomie = (id: string, stockRestant: number) => {
+      const parJour = consommationJour.get(id) ?? 0
+      if (parJour <= 0) return Infinity
+      return +(stockRestant / parJour).toFixed(1)
+    }
+
+    const valeurStock = Math.round(
+      etat.stock.reduce((s, i) => s + i.stock * i.prixUnitaire, 0),
+    )
+
+    // Coût matière du jour et marge brute réelle
+    let coutMatiereJour = 0
+    let caPlats = 0
+    for (const plat of MENU) {
+      const vendus = ventesParPlat.get(plat.id) ?? 0
+      coutMatiereJour += coutMatiere(plat, etat.stock) * vendus
+      caPlats += plat.prix * vendus
+    }
+    const pertesJour = etat.pertes.reduce((s, p) => s + p.cout, 0)
+    const foodCostJour = caPlats > 0 ? Math.round((coutMatiereJour / caPlats) * 100) : 0
+
+    // Réapprovisionnement suggéré : on remonte à 2 jours de couverture
+    // au-dessus du seuil, arrondi au conditionnement du fournisseur.
+    const reappro = etat.stock
+      .map((i) => {
+        const parJour = consommationJour.get(i.id) ?? 0
+        const cible = Math.max(i.seuil * 1.4, i.seuil + parJour * 2)
+        const manque = cible - i.stock
+        if (manque <= 0) return null
+        const quantite = Math.max(i.lot, Math.ceil(manque / i.lot) * i.lot)
+        return {
+          ingredient: i,
+          quantite,
+          cout: Math.round(quantite * i.prixUnitaire),
+          jours: autonomie(i.id, i.stock),
+          urgent: i.stock < i.seuil,
+        }
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      .sort((a, b) => a.jours - b.jours)
+
     return {
       caJour,
       tickets,
@@ -478,11 +739,20 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       parMode,
       affluence,
       ventesParPlat,
+      consommationJour,
+      autonomie,
+      valeurStock,
+      coutMatiereJour: Math.round(coutMatiereJour),
+      margeJour: Math.round(caPlats - coutMatiereJour - pertesJour),
+      pertesJour,
+      foodCostJour,
+      reappro,
       alertesStock: etat.stock.filter((i) => i.stock < i.seuil),
       peremptions: etat.stock.filter(
         (i) => i.joursRestants !== undefined && i.joursRestants <= 2,
       ),
       haccpRestant: etat.haccp.filter((t) => !t.faite).length,
+      equipePresente: etat.equipe.filter((e) => e.statut === 'present').length,
       enCuisine: etat.commandes.filter(
         (c) => c.statut === 'recue' || c.statut === 'preparation',
       ).length,
