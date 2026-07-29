@@ -1,3 +1,7 @@
+'use client'
+
+import { useEffect } from 'react'
+import { XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function PageHeader({
@@ -92,9 +96,11 @@ export function Badge({
 export function EmptyState({
   titre,
   texte,
+  action,
 }: {
   titre: string
   texte: string
+  action?: React.ReactNode
 }) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-12 text-center">
@@ -102,6 +108,226 @@ export function EmptyState({
       <p className="max-w-sm text-sm leading-relaxed text-muted-foreground text-pretty">
         {texte}
       </p>
+      {action && <div className="mt-2">{action}</div>}
+    </div>
+  )
+}
+
+/**
+ * Panneau modal : feuille remontant du bas sur mobile (pouce accessible),
+ * boîte centrée sur grand écran.
+ */
+export function Sheet({
+  ouvert,
+  onFermer,
+  titre,
+  sous,
+  children,
+  pied,
+  large = false,
+}: {
+  ouvert: boolean
+  onFermer: () => void
+  titre: string
+  sous?: string
+  children: React.ReactNode
+  pied?: React.ReactNode
+  large?: boolean
+}) {
+  useEffect(() => {
+    if (!ouvert) return
+    const onTouche = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onFermer()
+    }
+    document.addEventListener('keydown', onTouche)
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onTouche)
+      document.body.style.overflow = overflow
+    }
+  }, [ouvert, onFermer])
+
+  if (!ouvert) return null
+
+  return (
+    <div className="fixed inset-0 z-60 flex items-end justify-center sm:items-center">
+      <button
+        type="button"
+        aria-label="Fermer"
+        onClick={onFermer}
+        className="absolute inset-0 bg-background/70 backdrop-blur-sm"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={titre}
+        className={cn(
+          'animate-rise relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-popover shadow-2xl sm:rounded-2xl',
+          large ? 'sm:max-w-2xl' : 'sm:max-w-md',
+        )}
+      >
+        <div className="flex items-start gap-3 border-b border-border px-4 py-4 sm:px-5">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h2 className="font-display text-lg font-semibold tracking-tight">
+              {titre}
+            </h2>
+            {sous && (
+              <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
+                {sous}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onFermer}
+            aria-label="Fermer"
+            className="ml-auto flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <XIcon className="size-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+          {children}
+        </div>
+        {pied && (
+          <div className="border-t border-border bg-card/60 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">
+            {pied}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Sélecteur d'onglets tactile — zones larges, un seul geste. */
+export function Segments<T extends string>({
+  valeur,
+  options,
+  onChange,
+  className,
+}: {
+  valeur: T
+  options: { valeur: T; libelle: string; compte?: number }[]
+  onChange: (v: T) => void
+  className?: string
+}) {
+  return (
+    <div
+      role="tablist"
+      className={cn(
+        'flex gap-1 overflow-x-auto rounded-xl bg-secondary/60 p-1',
+        className,
+      )}
+    >
+      {options.map((o) => {
+        const actif = o.valeur === valeur
+        return (
+          <button
+            key={o.valeur}
+            type="button"
+            role="tab"
+            aria-selected={actif}
+            onClick={() => onChange(o.valeur)}
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-300 ease-[var(--ease-organic)]',
+              actif
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {o.libelle}
+            {o.compte !== undefined && o.compte > 0 && (
+              <span
+                className={cn(
+                  'rounded-full px-1.5 text-[10px] font-semibold tnum',
+                  actif
+                    ? 'bg-primary/15 text-primary'
+                    : 'bg-background/60 text-muted-foreground',
+                )}
+              >
+                {o.compte}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Progress({
+  valeur,
+  ton = 'primaire',
+  className,
+}: {
+  valeur: number
+  ton?: 'primaire' | 'succes' | 'alerte' | 'attention'
+  className?: string
+}) {
+  const couleurs = {
+    primaire: 'bg-primary',
+    succes: 'bg-success',
+    alerte: 'bg-destructive',
+    attention: 'bg-warning',
+  }
+  return (
+    <div
+      className={cn(
+        'h-1.5 overflow-hidden rounded-full bg-secondary',
+        className,
+      )}
+    >
+      <div
+        className={cn(
+          'h-full rounded-full transition-[width] duration-1000 ease-[var(--ease-organic)]',
+          couleurs[ton],
+        )}
+        style={{ width: `${Math.min(100, Math.max(0, valeur))}%` }}
+      />
+    </div>
+  )
+}
+
+/** Grosse pastille de chiffre clé, lisible d'un coup d'œil. */
+export function StatTile({
+  libelle,
+  valeur,
+  detail,
+  icone,
+  ton = 'neutre',
+}: {
+  libelle: string
+  valeur: React.ReactNode
+  detail?: React.ReactNode
+  icone?: React.ReactNode
+  ton?: 'neutre' | 'primaire' | 'succes' | 'alerte'
+}) {
+  const bords = {
+    neutre: 'border-border',
+    primaire: 'border-primary/30',
+    succes: 'border-success/30',
+    alerte: 'border-destructive/30',
+  }
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-1 rounded-xl border bg-card p-3.5',
+        bords[ton],
+      )}
+    >
+      <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        {icone}
+        {libelle}
+      </span>
+      <span className="font-display text-xl font-semibold tracking-tight tnum">
+        {valeur}
+      </span>
+      {detail && (
+        <span className="text-[11px] leading-snug text-muted-foreground">
+          {detail}
+        </span>
+      )}
     </div>
   )
 }

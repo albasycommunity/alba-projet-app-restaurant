@@ -3,24 +3,23 @@
 import { useEffect, useState } from 'react'
 import { CloudCheckIcon, WifiOffIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAlba } from '@/lib/store'
 
 /**
  * Indicateur de synchronisation hors-ligne → en ligne.
  * Au retour du réseau, une onde traverse l'icône : les données en attente partent.
  */
 export function SyncPill({ compact = false }: { compact?: boolean }) {
+  const { etat } = useAlba()
   const [enLigne, setEnLigne] = useState(true)
-  const [enAttente, setEnAttente] = useState(0)
   const [synchro, setSynchro] = useState(false)
+  const enAttente = etat.enAttente.length
 
   useEffect(() => {
     const online = () => {
       setEnLigne(true)
       setSynchro(true)
-      window.setTimeout(() => {
-        setSynchro(false)
-        setEnAttente(0)
-      }, 2200)
+      window.setTimeout(() => setSynchro(false), 2200)
     }
     const offline = () => setEnLigne(false)
     setEnLigne(navigator.onLine)
@@ -32,19 +31,15 @@ export function SyncPill({ compact = false }: { compact?: boolean }) {
     }
   }, [])
 
-  useEffect(() => {
-    if (enLigne) return
-    const t = window.setInterval(() => setEnAttente((n) => n + 1), 5000)
-    return () => window.clearInterval(t)
-  }, [enLigne])
-
   const label = !enLigne
     ? enAttente > 0
-      ? `${enAttente} ticket${enAttente > 1 ? 's' : ''} en attente`
+      ? `${enAttente} ticket${enAttente > 1 ? 's' : ''} gardé${enAttente > 1 ? 's' : ''} ici`
       : 'Hors-ligne — tout est gardé'
     : synchro
       ? 'Synchronisation…'
-      : 'À jour'
+      : enAttente > 0
+        ? `${enAttente} à envoyer`
+        : 'À jour'
 
   return (
     <div
