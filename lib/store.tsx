@@ -13,18 +13,22 @@ import {
   AFFLUENCE,
   CLIENTS,
   EQUIPE,
+  FORMATIONS,
   HACCP,
   MENU,
   OBJECTIF_JOUR,
   STOCK,
   coutMatiere,
   commandesInitiales,
+  niveauPour,
+  pointsPour,
   type ClientFidele,
   type Commande,
   type Employe,
   type Ingredient,
   type LigneCommande,
   type ModePaiement,
+  type Pointage,
   type Reglement,
   type StatutCommande,
   type TacheHaccp,
@@ -62,12 +66,24 @@ export type Reception = {
   heure: string
 }
 
+/** Une récompense fidélité échangée pendant le service. */
+export type Echange = {
+  id: string
+  clientId: string
+  client: string
+  libelle: string
+  cout: number
+  heure: string
+}
+
 export type Etat = {
   commandes: Commande[]
   stock: Ingredient[]
   haccp: TacheHaccp[]
   equipe: Employe[]
   clients: ClientFidele[]
+  pointages: Pointage[]
+  echanges: Echange[]
   pertes: Perte[]
   receptions: Reception[]
   panier: LignePanier[]
@@ -106,9 +122,11 @@ type Action =
   | { type: 'declarerPerte'; id: string; quantite: number; motif: string }
   | { type: 'pointer'; id: string }
   | { type: 'absenter'; id: string }
-  | { type: 'formation'; id: string; progression: number }
-  | { type: 'crediterFidelite'; id: string; points: number }
-  | { type: 'recompenser'; id: string; cout: number }
+  | { type: 'basculerModule'; id: string; moduleId: string }
+  | { type: 'confierCaisse'; id: string }
+  | { type: 'signalerErreur'; id: string }
+  | { type: 'crediterVisite'; id: string; montant: number }
+  | { type: 'recompenser'; id: string; libelle: string; cout: number }
   | { type: 'synchroniser' }
   | { type: 'hydrater'; etat: Etat }
   | { type: 'reinitialiser' }
@@ -117,15 +135,23 @@ type Action =
  * La version fait partie de la clé : quand la forme des données change,
  * l'ancienne session est ignorée au lieu d'être mal relue.
  */
-const CLE = 'alba:poste:v2'
+const CLE = 'alba:poste:v3'
 
 function etatInitial(): Etat {
   return {
     commandes: commandesInitiales(),
     stock: STOCK.map((i) => ({ ...i })),
     haccp: HACCP.map((t) => ({ ...t })),
-    equipe: EQUIPE.map((e) => ({ ...e })),
+    equipe: EQUIPE.map((e) => ({ ...e, modules: [...e.modules] })),
     clients: CLIENTS.map((c) => ({ ...c })),
+    pointages: EQUIPE.filter((e) => e.arrivee).map((e) => ({
+      id: `pt-${e.id}`,
+      employeId: e.id,
+      nom: e.nom,
+      type: 'arrivee' as const,
+      heure: e.arrivee!,
+    })),
+    echanges: [],
     pertes: [],
     receptions: [],
     panier: [],
@@ -156,6 +182,43 @@ function decrementerStock(stock: Ingredient[], lignes: LigneCommande[]) {
       ? { ...i, stock: Math.max(0, +(i.stock - consommation.get(i.id)!).toFixed(2)) }
       : i,
   )
+}
+
+/** Une ligne de feuille de présence, horodatée à la seconde du geste. */
+function journal(
+  employe: Employe,
+  type: Pointage['type'],
+  heure = new Date().toLocaleTimeString('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }),
+): Pointage {
+  return {
+    id: `pt-${employe.id}-${Date.now()}`,
+    employeId: employe.id,
+    nom: employe.nom,
+    type,
+    heure,
+  }
+}
+
+/**
+ * Enregistre une visite sur une fiche client : points gagnés, panier moyen
+ * recalculé sur l'ensemble des passages, niveau réévalué.
+ */
+function crediter(client: ClientFidele, montant: number): ClientFidele {
+  const points = client.points + pointsPour(montant)
+  const visites = client.visites + 1
+  return {
+    ...client,
+    points,
+    visites,
+    panierMoyen: Math.round(
+      (client.panierMoyen * client.visites + montant) / visites,
+    ),
+    niveau: niveauPour(points),
+    derniereVisite: 'À l’instant',
+  }
 }
 
 /** Estimation dynamique : la charge réelle de la cuisine allonge le temps. */
@@ -229,6 +292,9 @@ function reducer(etat: Etat, action: Action): Etat {
       }))
       const horsLigne =
         typeof navigator !== 'undefined' && !navigator.onLine
+      // Le ticket est attribué à qui tient la caisse : c'est ce qui
+      // alimente le suivi de performance individuel côté Équipe.
+      const caissier = etat.equipe.find((e) => e.caisse && e.statut !== 'absent')
       const commande: Commande = {
         id: `local-${Date.now()}`,
         ref: action.ref,
@@ -241,11 +307,25 @@ function reducer(etat: Etat, action: Action): Etat {
         lignes,
         reglements: action.reglements,
         synchronise: !horsLigne,
+        encaisseParId: caissier?.id,
       }
+      // Si le ticket porte le nom d'un client fidèle, ses points tombent
+      // tout seuls : personne n'a le temps de le faire à la main en rush.
+      const montant = action.reglements.reduce((s, r) => s + r.montant, 0)
+      const nomClient = etat.destination.client?.trim().toLowerCase()
+      const clients = nomClient
+        ? etat.clients.map((c) =>
+            c.nom.trim().toLowerCase() === nomClient
+              ? crediter(c, montant)
+              : c,
+          )
+        : etat.clients
+
       return {
         ...etat,
         commandes: [commande, ...etat.commandes],
         stock: decrementerStock(etat.stock, lignes),
+        clients,
         panier: [],
         destination: { canal: etat.destination.canal },
         prochainNumero: etat.prochainNumero + 1,
@@ -427,76 +507,120 @@ function reducer(etat: Etat, action: Action): Etat {
       }
     }
 
-    case 'absenter':
+    case 'absenter': {
+      const employe = etat.equipe.find((e) => e.id === action.id)
+      if (!employe || employe.statut === 'absent') return etat
+      return {
+        ...etat,
+        equipe: etat.equipe.map((e) =>
+          e.id === action.id ? { ...e, statut: 'absent', caisse: false } : e,
+        ),
+        pointages: [
+          journal(employe, 'depart'),
+          ...etat.pointages,
+        ],
+      }
+    }
+
+    case 'basculerModule':
       return {
         ...etat,
         equipe: etat.equipe.map((e) =>
           e.id === action.id
-            ? { ...e, statut: 'absent', arrivee: undefined }
+            ? {
+                ...e,
+                modules: e.modules.includes(action.moduleId)
+                  ? e.modules.filter((m) => m !== action.moduleId)
+                  : [...e.modules, action.moduleId],
+              }
             : e,
         ),
       }
 
-    case 'formation':
+    /** Une seule personne tient la caisse à la fois : les ventes sont traçables. */
+    case 'confierCaisse':
+      return {
+        ...etat,
+        equipe: etat.equipe.map((e) => ({
+          ...e,
+          caisse: e.id === action.id && e.statut !== 'absent',
+        })),
+      }
+
+    case 'signalerErreur':
       return {
         ...etat,
         equipe: etat.equipe.map((e) =>
-          e.id === action.id
-            ? { ...e, formation: Math.min(100, Math.max(0, action.progression)) }
-            : e,
+          e.id === action.id ? { ...e, erreurs: e.erreurs + 1 } : e,
         ),
       }
 
-    case 'crediterFidelite':
+    case 'crediterVisite': {
+      if (action.montant <= 0) return etat
+      return {
+        ...etat,
+        clients: etat.clients.map((c) =>
+          c.id === action.id ? crediter(c, action.montant) : c,
+        ),
+      }
+    }
+
+    case 'recompenser': {
+      const client = etat.clients.find((c) => c.id === action.id)
+      if (!client || client.points < action.cout) return etat
       return {
         ...etat,
         clients: etat.clients.map((c) =>
           c.id === action.id
             ? {
                 ...c,
-                points: c.points + action.points,
-                visites: c.visites + 1,
-                niveau:
-                  c.points + action.points >= 1000
-                    ? 'Or'
-                    : c.points + action.points >= 600
-                      ? 'Argent'
-                      : 'Bronze',
+                points: c.points - action.cout,
+                niveau: niveauPour(c.points - action.cout),
               }
             : c,
         ),
+        echanges: [
+          {
+            id: `ec-${Date.now()}`,
+            clientId: client.id,
+            client: client.nom,
+            libelle: action.libelle,
+            cout: action.cout,
+            heure: new Date().toLocaleTimeString('fr-FR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          },
+          ...etat.echanges,
+        ],
       }
+    }
 
-    case 'recompenser':
-      return {
-        ...etat,
-        clients: etat.clients.map((c) =>
-          c.id === action.id
-            ? { ...c, points: Math.max(0, c.points - action.cout) }
-            : c,
-        ),
-      }
-
-    case 'pointer':
+    case 'pointer': {
+      const employe = etat.equipe.find((e) => e.id === action.id)
+      if (!employe) return etat
+      const heure = new Date().toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      const type: Pointage['type'] =
+        employe.statut === 'present'
+          ? 'pause'
+          : employe.statut === 'pause'
+            ? 'reprise'
+            : 'arrivee'
       return {
         ...etat,
         equipe: etat.equipe.map((e) =>
           e.id === action.id
-            ? e.statut === 'present'
+            ? employe.statut === 'present'
               ? { ...e, statut: 'pause' }
-              : {
-                  ...e,
-                  statut: 'present',
-                  arrivee:
-                    e.arrivee ??
-                    new Date().toLocaleTimeString('fr-FR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    }),
-                }
+              : { ...e, statut: 'present', arrivee: e.arrivee ?? heure }
             : e,
         ),
+        pointages: [journal(employe, type, heure), ...etat.pointages],
       }
+    }
 
     case 'synchroniser':
       return {
@@ -549,6 +673,21 @@ export type Indicateurs = {
   haccpRestant: number
   equipePresente: number
   enCuisine: number
+  /** Performance individuelle recalculée depuis les tickets encaissés. */
+  performance: {
+    employe: Employe
+    ventes: number
+    tickets: number
+    panierMoyen: number
+    formation: number
+    fiabilite: number
+    tient: boolean
+  }[]
+  /** Somme des points de fidélité en circulation — c'est une dette. */
+  pointsEnCirculation: number
+  clientsOr: number
+  /** Clients à relancer : anniversaire ou absence prolongée. */
+  aRelancer: ClientFidele[]
 }
 
 type Contexte = {
@@ -731,6 +870,38 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       .filter((r): r is NonNullable<typeof r> => r !== null)
       .sort((a, b) => a.jours - b.jours)
 
+    // Performance individuelle : socle du matin + tickets réellement
+    // encaissés depuis l'ouverture de la session par cette personne.
+    const performance = etat.equipe
+      .map((employe) => {
+        const siens = locales.filter((c) => c.encaisseParId === employe.id)
+        const ventesLocales = siens.reduce(
+          (s, c) => s + c.reglements.reduce((t, r) => t + r.montant, 0),
+          0,
+        )
+        const ventes = employe.ventesJour + ventesLocales
+        const nbTickets = siens.length
+        return {
+          employe,
+          ventes,
+          tickets: nbTickets,
+          panierMoyen:
+            nbTickets > 0 ? Math.round(ventesLocales / nbTickets) : 0,
+          formation: Math.round(
+            (employe.modules.length / Math.max(1, FORMATIONS.length)) * 100,
+          ),
+          // 1 erreur pèse plus quand on a peu servi : la fiabilité est relative.
+          fiabilite: Math.max(
+            0,
+            100 - employe.erreurs * (nbTickets > 6 ? 6 : 12),
+          ),
+          tient: employe.caisse && employe.statut !== 'absent',
+        }
+      })
+      .sort((a, b) => b.ventes - a.ventes)
+
+    const pointsEnCirculation = etat.clients.reduce((s, c) => s + c.points, 0)
+
     return {
       caJour,
       tickets,
@@ -756,6 +927,15 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       enCuisine: etat.commandes.filter(
         (c) => c.statut === 'recue' || c.statut === 'preparation',
       ).length,
+      performance,
+      pointsEnCirculation,
+      clientsOr: etat.clients.filter((c) => c.niveau === 'Or').length,
+      aRelancer: etat.clients.filter(
+        (c) =>
+          c.anniversaire !== undefined ||
+          c.derniereVisite.includes('9 jours') ||
+          c.derniereVisite.includes('semaine'),
+      ),
     }
   }, [etat])
 

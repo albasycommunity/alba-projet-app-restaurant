@@ -225,6 +225,8 @@ export type Commande = {
   reglements: Reglement[]
   /** false quand le ticket attend la synchronisation cloud */
   synchronise: boolean
+  /** qui a encaissé — base du suivi de performance individuel */
+  encaisseParId?: string
 }
 
 /** Génère la file de départ. Les minutes sont relatives à l'ouverture de l'app. */
@@ -462,32 +464,109 @@ export type Employe = {
   arrivee?: string
   ventesJour: number
   erreurs: number
-  formation: number // % de progression
+  /** modules de formation validés — la progression en % s'en déduit */
+  modules: string[]
+  /** numéro de badge encodé dans le QR de pointage */
+  badge: string
+  /** l'employé tient la caisse : ses encaissements lui sont attribués */
+  caisse: boolean
 }
 
 export const EQUIPE: Employe[] = [
-  { id: 'e1', nom: 'Awa Diop', role: 'Cheffe de salle', statut: 'present', arrivee: '07:02', ventesJour: 184000, erreurs: 0, formation: 100 },
-  { id: 'e2', nom: 'Ibrahima Fall', role: 'Cuisinier', statut: 'present', arrivee: '06:48', ventesJour: 0, erreurs: 1, formation: 82 },
-  { id: 'e3', nom: 'Sokhna Mbaye', role: 'Caissière', statut: 'pause', arrivee: '08:15', ventesJour: 226500, erreurs: 2, formation: 64 },
-  { id: 'e4', nom: 'Cheikh Sarr', role: 'Livreur', statut: 'present', arrivee: '10:30', ventesJour: 48000, erreurs: 0, formation: 45 },
-  { id: 'e5', nom: 'Ndèye Gueye', role: 'Commis', statut: 'absent', ventesJour: 0, erreurs: 0, formation: 20 },
+  { id: 'e1', nom: 'Awa Diop', role: 'Cheffe de salle', statut: 'present', arrivee: '07:02', ventesJour: 184000, erreurs: 0, modules: ['f1', 'f2', 'f3', 'f4'], badge: 'ALBA-4417', caisse: false },
+  { id: 'e2', nom: 'Ibrahima Fall', role: 'Cuisinier', statut: 'present', arrivee: '06:48', ventesJour: 0, erreurs: 1, modules: ['f2', 'f3'], badge: 'ALBA-2098', caisse: false },
+  { id: 'e3', nom: 'Sokhna Mbaye', role: 'Caissière', statut: 'pause', arrivee: '08:15', ventesJour: 226500, erreurs: 2, modules: ['f1', 'f4'], badge: 'ALBA-7731', caisse: true },
+  { id: 'e4', nom: 'Cheikh Sarr', role: 'Livreur', statut: 'present', arrivee: '10:30', ventesJour: 48000, erreurs: 0, modules: ['f4'], badge: 'ALBA-5562', caisse: false },
+  { id: 'e5', nom: 'Ndèye Gueye', role: 'Commis', statut: 'absent', ventesJour: 0, erreurs: 0, modules: [], badge: 'ALBA-9014', caisse: false },
 ]
+
+/** Un mouvement de pointage de la journée — la feuille de présence réelle. */
+export type Pointage = {
+  id: string
+  employeId: string
+  nom: string
+  type: 'arrivee' | 'pause' | 'reprise' | 'depart'
+  heure: string
+}
+
+export const LIBELLE_POINTAGE: Record<Pointage['type'], string> = {
+  arrivee: 'Arrivée',
+  pause: 'Départ en pause',
+  reprise: 'Retour de pause',
+  depart: 'Fin de service',
+}
+
+export const STATUTS_EQUIPE: Record<
+  Employe['statut'],
+  { libelle: string; ton: 'succes' | 'attention' | 'neutre' }
+> = {
+  present: { libelle: 'En poste', ton: 'succes' },
+  pause: { libelle: 'En pause', ton: 'attention' },
+  absent: { libelle: 'Pas encore là', ton: 'neutre' },
+}
+
+export type NiveauFidelite = 'Bronze' | 'Argent' | 'Or'
 
 export type ClientFidele = {
   id: string
   nom: string
+  telephone: string
   points: number
   visites: number
   panierMoyen: number
-  niveau: 'Bronze' | 'Argent' | 'Or'
+  niveau: NiveauFidelite
   anniversaire?: string
+  /** plat commandé le plus souvent — sert à personnaliser l'accueil */
+  favori?: string
+  derniereVisite: string
 }
 
 export const CLIENTS: ClientFidele[] = [
-  { id: 'cl1', nom: 'Aminata Diallo', points: 1240, visites: 34, panierMoyen: 6200, niveau: 'Or', anniversaire: 'Dans 3 jours' },
-  { id: 'cl2', nom: 'Moussa Sow', points: 780, visites: 21, panierMoyen: 4800, niveau: 'Argent' },
-  { id: 'cl3', nom: 'Khady Bâ', points: 410, visites: 12, panierMoyen: 3900, niveau: 'Bronze' },
-  { id: 'cl4', nom: 'Ousmane Ka', points: 950, visites: 26, panierMoyen: 5400, niveau: 'Argent', anniversaire: "Aujourd\u2019hui" },
+  { id: 'cl1', nom: 'Aminata Diallo', telephone: '+221 77 412 08 55', points: 1240, visites: 34, panierMoyen: 6200, niveau: 'Or', anniversaire: 'Dans 3 jours', favori: 'Thiéboudienne rouge', derniereVisite: 'Hier' },
+  { id: 'cl2', nom: 'Moussa Sow', telephone: '+221 78 330 17 42', points: 780, visites: 21, panierMoyen: 4800, niveau: 'Argent', favori: 'Poisson braisé', derniereVisite: 'Il y a 4 jours' },
+  { id: 'cl3', nom: 'Khady Bâ', telephone: '+221 76 905 63 10', points: 410, visites: 12, panierMoyen: 3900, niveau: 'Bronze', favori: 'Yassa poulet', derniereVisite: 'Il y a 9 jours' },
+  { id: 'cl4', nom: 'Ousmane Ka', telephone: '+221 77 208 44 91', points: 950, visites: 26, panierMoyen: 5400, niveau: 'Argent', anniversaire: 'Aujourd’hui', favori: 'Dibi mouton', derniereVisite: 'Il y a 2 jours' },
+]
+
+/** Paliers de fidélité — le client voit toujours ce qui lui reste à faire. */
+export const PALIERS: { niveau: NiveauFidelite; seuil: number; avantage: string }[] = [
+  { niveau: 'Bronze', seuil: 0, avantage: 'Bissap offert à la 5ᵉ visite' },
+  { niveau: 'Argent', seuil: 600, avantage: 'Dessert offert chaque semaine' },
+  { niveau: 'Or', seuil: 1000, avantage: '10 % sur toute la carte, toujours' },
+]
+
+/** 100 FCFA dépensés = 1 point. Simple à expliquer au comptoir. */
+export const POINTS_PAR_FCFA = 1 / 100
+
+export function pointsPour(montant: number) {
+  return Math.floor(montant * POINTS_PAR_FCFA)
+}
+
+export function niveauPour(points: number): NiveauFidelite {
+  if (points >= 1000) return 'Or'
+  if (points >= 600) return 'Argent'
+  return 'Bronze'
+}
+
+/** Ce qu'il reste à gagner avant le palier suivant. */
+export function prochainPalier(points: number) {
+  const suivant = PALIERS.find((p) => p.seuil > points)
+  if (!suivant) return null
+  return { ...suivant, manque: suivant.seuil - points }
+}
+
+export type Recompense = {
+  id: string
+  libelle: string
+  cout: number
+  detail: string
+}
+
+export const RECOMPENSES: Recompense[] = [
+  { id: 'r1', libelle: 'Bissap frais offert', cout: 80, detail: 'Le geste simple qui fait revenir.' },
+  { id: 'r2', libelle: 'Thiakry offert', cout: 150, detail: 'Dessert maison, sans condition.' },
+  { id: 'r3', libelle: 'Plat du jour offert', cout: 500, detail: 'Au choix parmi les plats de la carte.' },
+  { id: 'r4', libelle: '10 % sur l’addition', cout: 300, detail: 'Valable sur le ticket en cours.' },
 ]
 
 export const AFFLUENCE = [
@@ -520,6 +599,15 @@ export type Creneau = {
 }
 
 export const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+
+/** Amplitude affichée par le planning : on ne dessine pas la nuit vide. */
+export const PLANNING_DEBUT = 6
+export const PLANNING_FIN = 23
+
+/** Jour de la semaine courant, au format court du planning. */
+export function jourCourant(date = new Date()) {
+  return JOURS[(date.getDay() + 6) % 7]
+}
 
 export const PLANNING: Creneau[] = [
   { employeId: 'e1', jour: 'Lun', debut: 7, fin: 16 },
