@@ -668,3 +668,142 @@ export function heureCourte(ts: number) {
     minute: '2-digit',
   })
 }
+
+/* ------------------------- Facturation & abonnements ------------------------- */
+
+export type PlanId = 'essentiel' | 'pro' | 'groupe'
+
+export type Plan = {
+  id: PlanId
+  nom: string
+  accroche: string
+  prix: number | null // null = sur devis
+  pointsDeVente: number | null // null = illimité
+  employesMax: number | null
+  avantages: string[]
+  populaire?: boolean
+}
+
+export const PLANS: Plan[] = [
+  {
+    id: 'essentiel',
+    nom: 'Essentiel',
+    accroche: 'Pour démarrer proprement, seul ou en petite équipe.',
+    prix: 15000,
+    pointsDeVente: 1,
+    employesMax: 5,
+    avantages: [
+      'Caisse résiliente hors-ligne',
+      'Cuisine et stock de base',
+      'Reçus numériques WhatsApp',
+      'Support par WhatsApp',
+    ],
+  },
+  {
+    id: 'pro',
+    nom: 'Pro',
+    accroche: 'Le choix de la majorité des restaurants alba à Dakar.',
+    prix: 35000,
+    pointsDeVente: 3,
+    employesMax: null,
+    avantages: [
+      'Tout Essentiel',
+      'Multi-postes de caisse',
+      'Personnel illimité + formation',
+      'Reporting avancé et food cost',
+      'Programme de fidélité client',
+    ],
+    populaire: true,
+  },
+  {
+    id: 'groupe',
+    nom: 'Groupe',
+    accroche: 'Pour les chaînes multi-restaurants et franchises.',
+    prix: null,
+    pointsDeVente: null,
+    employesMax: null,
+    avantages: [
+      'Tout Pro',
+      'Multi-restaurants consolidé',
+      'Export comptable avancé',
+      'API ouverte',
+      'Chargé de compte dédié',
+    ],
+  },
+]
+
+export function planPar(id: PlanId) {
+  return PLANS.find((p) => p.id === id)!
+}
+
+export type StatutAbonnement = 'actif' | 'grace' | 'suspendu'
+
+export type Facture = {
+  id: string
+  periode: string
+  montant: number
+  statut: 'payee' | 'echouee'
+  mode: ModePaiement | 'Carte bancaire'
+  date: string
+}
+
+export const FACTURES: Facture[] = [
+  { id: 'fa-2607', periode: 'Juillet 2026', montant: 35000, statut: 'payee', mode: 'Wave', date: '01 juil. 2026' },
+  { id: 'fa-2606', periode: 'Juin 2026', montant: 35000, statut: 'payee', mode: 'Wave', date: '01 juin 2026' },
+  { id: 'fa-2605', periode: 'Mai 2026', montant: 35000, statut: 'echouee', mode: 'Orange Money', date: '01 mai 2026' },
+  { id: 'fa-2605b', periode: 'Mai 2026 (relance)', montant: 35000, statut: 'payee', mode: 'Wave', date: '03 mai 2026' },
+  { id: 'fa-2604', periode: 'Avril 2026', montant: 15000, statut: 'payee', mode: 'Orange Money', date: '01 avr. 2026' },
+]
+
+/** L'abonnement du restaurant courant — sert de socle à l'écran Abonnement. */
+export const ABONNEMENT = {
+  plan: 'pro' as PlanId,
+  statut: 'actif' as StatutAbonnement,
+  prochainPrelevement: '01 août 2026',
+  modePaiement: 'Wave' as ModePaiement | 'Carte bancaire',
+  pointsDeVenteActifs: 1,
+  joursGraceRestants: 5,
+}
+
+/* --------------------------- Console super-admin --------------------------- */
+
+export type StatutTenant = 'actif' | 'risque' | 'churn'
+
+export type Tenant = {
+  id: string
+  nom: string
+  ville: string
+  plan: PlanId
+  statut: StatutTenant
+  mrr: number
+  clientDepuis: string
+  derniereActivite: string
+  employes: number
+  pointsDeVente: number
+  usageVsMoisDernier: number // % — négatif = baisse d'usage
+}
+
+export const TENANTS: Tenant[] = [
+  { id: 't1', nom: 'Chez Fatou', ville: 'Ngor, Dakar', plan: 'pro', statut: 'actif', mrr: 35000, clientDepuis: 'Mars 2025', derniereActivite: 'Il y a 4 min', employes: 5, pointsDeVente: 1, usageVsMoisDernier: 12 },
+  { id: 't2', nom: 'Keur Xaalis', ville: 'Médina, Dakar', plan: 'groupe', statut: 'actif', mrr: 95000, clientDepuis: 'Janvier 2025', derniereActivite: 'Il y a 20 min', employes: 34, pointsDeVente: 4, usageVsMoisDernier: 6 },
+  { id: 't3', nom: 'Dibiterie Sokhna', ville: 'Parcelles Assainies', plan: 'essentiel', statut: 'risque', mrr: 15000, clientDepuis: 'Novembre 2025', derniereActivite: 'Il y a 6 jours', employes: 2, pointsDeVente: 1, usageVsMoisDernier: -34 },
+  { id: 't4', nom: 'Le Baobab Doré', ville: 'Plateau, Dakar', plan: 'pro', statut: 'actif', mrr: 35000, clientDepuis: 'Juin 2025', derniereActivite: 'Il y a 1 h', employes: 11, pointsDeVente: 2, usageVsMoisDernier: 3 },
+  { id: 't5', nom: 'Thiof & Co', ville: 'Saint-Louis', plan: 'essentiel', statut: 'actif', mrr: 15000, clientDepuis: 'Février 2026', derniereActivite: 'Il y a 2 h', employes: 3, pointsDeVente: 1, usageVsMoisDernier: 22 },
+  { id: 't6', nom: 'Chez Rokhaya', ville: 'Thiès', plan: 'essentiel', statut: 'risque', mrr: 15000, clientDepuis: 'Août 2025', derniereActivite: 'Il y a 9 jours', employes: 2, pointsDeVente: 1, usageVsMoisDernier: -48 },
+  { id: 't7', nom: 'Terrasse Almadies', ville: 'Almadies, Dakar', plan: 'pro', statut: 'actif', mrr: 35000, clientDepuis: 'Septembre 2024', derniereActivite: 'Il y a 15 min', employes: 8, pointsDeVente: 1, usageVsMoisDernier: 9 },
+  { id: 't8', nom: 'Chez Modou', ville: 'Ziguinchor', plan: 'essentiel', statut: 'churn', mrr: 0, clientDepuis: 'Mai 2025', derniereActivite: 'Il y a 41 jours', employes: 0, pointsDeVente: 1, usageVsMoisDernier: -100 },
+]
+
+/** Revenu mensuel récurrent — somme des tenants qui payent encore. */
+export function mrrTotal(tenants: Tenant[] = TENANTS) {
+  return tenants.reduce((s, t) => s + t.mrr, 0)
+}
+
+export function tauxChurn(tenants: Tenant[] = TENANTS) {
+  const churn = tenants.filter((t) => t.statut === 'churn').length
+  return Math.round((churn / tenants.length) * 1000) / 10
+}
+
+export function tenantsARisque(tenants: Tenant[] = TENANTS) {
+  return tenants.filter((t) => t.statut === 'risque')
+}
