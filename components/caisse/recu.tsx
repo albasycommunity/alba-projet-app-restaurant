@@ -110,7 +110,7 @@ export function Recu({
       {objectifAtteint && (
         <p className="flex items-center gap-2 rounded-full bg-primary/12 px-3 py-1.5 text-xs font-medium text-primary">
           <SparklesIcon className="size-3.5" />
-          Objectif du jour atteint. Belle journée, Fatou.
+          Objectif du jour atteint. Belle journée.
         </p>
       )}
 

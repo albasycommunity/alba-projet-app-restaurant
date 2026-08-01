@@ -6,8 +6,11 @@ import {
   TriangleAlertIcon,
 } from 'lucide-react'
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { Badge, Card, CardTitle, PageHeader } from '@/components/kit'
 import { CountUp } from '@/components/count-up'
+import { NOM_COOKIE_SESSION } from '@/lib/auth'
+import { verifierSession } from '@/lib/server/auth'
 import {
   AFFLUENCE,
   CA_JOUR,
@@ -24,11 +27,23 @@ const topPlats = [...MENU].sort((a, b) => b.vendusJour - a.vendusJour).slice(0, 
 const alertesStock = STOCK.filter((i) => i.stock < i.seuil)
 const partObjectif = Math.round((CA_JOUR / OBJECTIF_JOUR) * 100)
 
-export default function PilotagePage() {
+async function prenomConnexion(): Promise<string> {
+  try {
+    const token = (await cookies()).get(NOM_COOKIE_SESSION)?.value
+    if (!token) return 'à bord'
+    const jwt = await verifierSession(token)
+    return jwt?.nom.split(' ')[0] ?? 'à bord'
+  } catch {
+    return 'à bord'
+  }
+}
+
+export default async function PilotagePage() {
+  const prenom = await prenomConnexion()
   return (
     <div className="flex flex-col">
       <PageHeader
-        titre="Bonjour Fatou"
+        titre={`Bonjour ${prenom}`}
         sous="Voilà où en est ta journée. Le rapport partira tout seul sur WhatsApp à la fermeture."
         action={
           <button

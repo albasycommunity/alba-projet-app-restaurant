@@ -20,9 +20,8 @@ import {
   UsersIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { RESTAURANT } from '@/lib/data'
 import { useAlba } from '@/lib/store'
-import { useAuth } from '@/lib/auth-contexte'
+import { initialesDe, useAuth } from '@/lib/auth-contexte'
 import { SyncPill } from '@/components/sync-pill'
 import { Notifs } from '@/components/notifs'
 import { Palette } from '@/components/palette'
@@ -77,7 +76,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { indicateurs, etat } = useAlba()
-  const { utilisateur, deconnecter } = useAuth()
+  const { utilisateur, restaurantNom, deconnecter } = useAuth()
   const [clair, setClair] = useState(false)
   const [plus, setPlus] = useState(false)
   const [palette, setPalette] = useState(false)
@@ -139,7 +138,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               alba
             </span>
             <span className="truncate text-xs text-muted-foreground">
-              {RESTAURANT.nom}
+              {restaurantNom ?? 'alba'}
             </span>
           </div>
         </div>
@@ -212,14 +211,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
           <div className="flex items-center gap-2 rounded-lg bg-secondary/50 px-2 py-2">
             <span className="flex size-7 items-center justify-center rounded-full bg-primary/20 text-[11px] font-semibold text-primary">
-              FN
+              {initialesDe(utilisateur?.nom ?? 'Restaurant')}
             </span>
             <div className="flex min-w-0 flex-col leading-tight">
               <span className="truncate text-xs font-medium">
-                {RESTAURANT.gerante}
+                {utilisateur?.nom ?? 'Restaurant'}
               </span>
               <span className="truncate text-[11px] text-muted-foreground">
-                {utilisateur?.email ?? RESTAURANT.quartier}
+                {utilisateur?.email ?? restaurantNom ?? 'alba'}
               </span>
             </div>
             <button
@@ -241,7 +240,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-col leading-tight">
           <span className="font-display text-base font-semibold">alba</span>
           <span className="truncate text-[11px] text-muted-foreground">
-            {RESTAURANT.nom}
+            {restaurantNom ?? 'la gestion de restaurant'}
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -349,12 +348,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
           <div className="mt-2 flex items-center gap-3 rounded-xl bg-secondary/50 p-4">
             <span className="flex size-9 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
-              FN
+              {initialesDe(utilisateur?.nom ?? 'Restaurant')}
             </span>
             <div className="flex min-w-0 flex-col leading-tight">
-              <span className="text-sm font-medium">{RESTAURANT.gerante}</span>
+              <span className="text-sm font-medium">
+                {utilisateur?.nom ?? 'Restaurant'}
+              </span>
               <span className="text-[11px] text-muted-foreground">
-                {utilisateur?.email ?? RESTAURANT.quartier}
+                {utilisateur?.email ?? restaurantNom ?? 'alba'}
               </span>
             </div>
             <button

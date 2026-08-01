@@ -2,7 +2,6 @@ import { hashSync } from 'bcryptjs'
 import { NextRequest, NextResponse } from 'next/server'
 import { Role, nouveauId, dateIso } from '@/lib/auth'
 import { muterBdd, trouverUtilisateurParEmail } from '@/lib/server/bdd'
-import { cookieSession, signerSession } from '@/lib/server/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,17 +60,7 @@ export async function POST(req: NextRequest) {
     })
   })
 
-  const token = await signerSession({
-    id: utilisateur.id,
-    email: utilisateur.email,
-    nom: utilisateur.nom,
-    role: utilisateur.role,
-    restaurantId: null,
-  })
-  const reponse = NextResponse.json(
-    { destination: '/', utilisateur: { ...utilisateur, password_hash: undefined } },
-    { status: 201 },
-  )
-  cookieSession(reponse, token)
-  return reponse
+  // Volontairement pas de session : l'inscription ramène l'utilisateur
+  // vers la page de connexion, où il choisit de se connecter.
+  return NextResponse.json({ ok: true }, { status: 201 })
 }

@@ -1,9 +1,6 @@
 import { compareSync } from 'bcryptjs'
 import { NextRequest, NextResponse } from 'next/server'
-import {
-  ACCUEIL_PAR_ROLE,
-  Role,
-} from '@/lib/auth'
+import { destinationPour, Role } from '@/lib/auth'
 import {
   abonnementDeRestaurant,
   trouverUtilisateurParEmail,
@@ -16,6 +13,10 @@ export async function POST(req: NextRequest) {
   const corps = await req.json().catch(() => null)
   const email = typeof corps?.email === 'string' ? corps.email : ''
   const motDePasse = typeof corps?.motDePasse === 'string' ? corps.motDePasse : ''
+  const suivant =
+    typeof corps?.suivant === 'string' && corps.suivant
+      ? corps.suivant
+      : null
 
   if (!email || !motDePasse) {
     return NextResponse.json(
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
   })
 
   const reponse = NextResponse.json({
-    destination: ACCUEIL_PAR_ROLE[utilisateur.role],
+    destination: destinationPour(utilisateur.role, suivant),
     utilisateur: {
       id: utilisateur.id,
       email: utilisateur.email,

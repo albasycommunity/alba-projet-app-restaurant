@@ -23,6 +23,43 @@ export const ACCUEIL_PAR_ROLE: Record<Role, string> = {
   [Role.CLIENT]: '/',
 }
 
+/** Zones accessibles à chaque rôle — pour valider un `suivant` au login. */
+const ZONES_PAR_ROLE: Record<Role, string[]> = {
+  [Role.SUPER_ADMIN]: ['/super-admin'],
+  [Role.RESTAURANT_ADMIN]: [
+    '/back-office',
+    '/pilotage',
+    '/caisse',
+    '/cuisine',
+    '/stock',
+    '/hygiene',
+    '/equipe',
+    '/clients',
+    '/abonnement',
+  ],
+  [Role.CLIENT]: ['/'],
+}
+
+/**
+ * Destination après connexion : honore le paramètre `suivant` uniquement
+ * si la cible est réellement accessible au rôle — jamais un chemin
+ * arbitraire (le proxy re-vérifie de toute façon).
+ */
+export function destinationPour(role: Role, suivant?: string | null): string {
+  if (
+    typeof suivant === 'string' &&
+    suivant.startsWith('/') &&
+    !suivant.startsWith('//') &&
+    !suivant.includes(':') &&
+    ZONES_PAR_ROLE[role].some((z) =>
+      z === '/' ? suivant === '/' : suivant.startsWith(z),
+    )
+  ) {
+    return suivant
+  }
+  return ACCUEIL_PAR_ROLE[role]
+}
+
 export type PlanAbonnement = 'mensuel' | 'annuel'
 
 export type StatutAbonnement = 'actif' | 'expire' | 'en_attente'
