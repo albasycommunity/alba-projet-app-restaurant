@@ -73,6 +73,7 @@ type Overview = {
     restaurantsActifs: number
     admins: number
     abonnementsActifs: number
+    essais: number
     enAttente: number
     expires: number
     mrq: number
@@ -90,9 +91,11 @@ type Onglet = 'vue' | 'restaurants' | 'comptes'
 function statutTon(s: StatutAbonnement) {
   return s === 'actif'
     ? ('succes' as const)
-    : s === 'en_attente'
-      ? ('attention' as const)
-      : ('alerte' as const)
+    : s === 'essai'
+      ? ('primaire' as const)
+      : s === 'en_attente'
+        ? ('attention' as const)
+        : ('alerte' as const)
 }
 
 export default function PageSuperAdmin() {
@@ -243,7 +246,7 @@ function VueEnsemble({ donnees }: { donnees: Overview }) {
         <StatTile
           libelle="Abonnements actifs"
           valeur={stats.abonnementsActifs}
-          detail={`${stats.enAttente} en attente · ${stats.expires} expirés`}
+          detail={`${stats.essais} en essai · ${stats.enAttente} en attente · ${stats.expires} expirés`}
           icone={<WalletIcon className="size-3.5" />}
           ton={stats.enAttente > 0 ? 'primaire' : 'succes'}
         />
@@ -383,7 +386,7 @@ function Restaurants({
                       <span className="text-[10px] text-muted-foreground tnum">
                         {fcfa(a.montant)} / {a.plan}
                         {' · '}
-                        {a.statut === 'actif'
+                        {a.statut === 'actif' || a.statut === 'essai'
                           ? `${a.joursRestants} j restants`
                           : `échéance ${new Date(a.dateFin).toLocaleDateString('fr-FR')}`}
                       </span>

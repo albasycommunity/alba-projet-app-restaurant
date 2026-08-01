@@ -13,7 +13,7 @@ import { Role, type SessionUtilisateur } from '@/lib/auth'
 
 type SessionAbonnement = {
   plan: 'mensuel' | 'annuel'
-  statut: 'actif' | 'expire' | 'en_attente'
+  statut: 'actif' | 'essai' | 'expire' | 'en_attente'
   dateFin: string
   montant: number
 }

@@ -96,7 +96,7 @@ export function LogoComplet({
           alba
         </span>
         <span className="mt-1 text-[9.5px] font-medium tracking-[0.22em] text-muted-foreground uppercase">
-          sans coupure
+          excellence culinaire
         </span>
       </div>
     </div>

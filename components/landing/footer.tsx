@@ -21,8 +21,8 @@ export function PiedDePage() {
           <div className="max-w-xs">
             <LogoComplet />
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground text-pretty">
-              La gestion de restaurant offline-first, pensée pour le terrain
-              sénégalais. Façonnée à Dakar, avec soin.
+              L'excellence culinaire, simplifiée. Offline-first, pensée pour
+              le terrain sénégalais et façonnée à Dakar, avec soin.
             </p>
           </div>
 
@@ -52,7 +52,7 @@ export function PiedDePage() {
                 Se connecter
               </Link>
               <Link
-                href="/register"
+                href="#plans"
                 className="w-fit text-sm text-foreground/80 transition-colors hover:text-primary"
               >
                 Créer un compte
@@ -69,8 +69,8 @@ export function PiedDePage() {
 
         <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t border-border/60 pt-6 sm:flex-row">
           <p className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} alba — la gestion de restaurant, sans
-            coupure.
+            © {new Date().getFullYear()} alba — l'excellence culinaire,
+            simplifiée.
           </p>
           <p className="text-xs text-muted-foreground">
             Offline-first · pensé pour la cuisine

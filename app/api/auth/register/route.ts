@@ -1,7 +1,11 @@
 import { hashSync } from 'bcryptjs'
 import { NextRequest, NextResponse } from 'next/server'
-import { Role, nouveauId, dateIso } from '@/lib/auth'
-import { muterBdd, trouverUtilisateurParEmail } from '@/lib/server/bdd'
+import { Role, nouveauId, dateIso, type PlanAbonnement } from '@/lib/auth'
+import {
+  creerRestaurantEnEssai,
+  muterBdd,
+  trouverUtilisateurParEmail,
+} from '@/lib/server/bdd'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +17,12 @@ export async function POST(req: NextRequest) {
   const email = typeof corps?.email === 'string' ? corps.email.trim() : ''
   const motDePasse =
     typeof corps?.motDePasse === 'string' ? corps.motDePasse : ''
+  const nomRestaurant =
+    typeof corps?.nomRestaurant === 'string' ? corps.nomRestaurant.trim() : ''
+  const quartier =
+    typeof corps?.quartier === 'string' ? corps.quartier.trim() : ''
+  const plan: PlanAbonnement | null =
+    corps?.plan === 'annuel' ? 'annuel' : corps?.plan === 'mensuel' ? 'mensuel' : null
 
   if (nom.length < 2) {
     return NextResponse.json(
@@ -39,6 +49,31 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Inscription gérant : un plan a été choisi sur la landing → le restaurant
+  // démarre avec DUREE_ESSAI_JOURS jours d'essai gratuit. Aucune session
+  // n'est créée : l'utilisateur se connecte ensuite.
+  if (plan) {
+    if (nomRestaurant.length < 2) {
+      return NextResponse.json(
+        { erreur: "Indique le nom de ton restaurant." },
+        { status: 400 },
+      )
+    }
+    await creerRestaurantEnEssai({
+      nom: nomRestaurant,
+      quartier: quartier || 'Dakar',
+      gerant: nom,
+      email,
+      motDePasse,
+      plan,
+    })
+    return NextResponse.json(
+      { ok: true, compte: 'restaurant', plan },
+      { status: 201 },
+    )
+  }
+
+  // Inscription client (Carte de Fidélité) — comportement historique.
   const utilisateur = {
     id: nouveauId('u'),
     email: email.toLowerCase(),
@@ -60,7 +95,5 @@ export async function POST(req: NextRequest) {
     })
   })
 
-  // Volontairement pas de session : l'inscription ramène l'utilisateur
-  // vers la page de connexion, où il choisit de se connecter.
-  return NextResponse.json({ ok: true }, { status: 201 })
+  return NextResponse.json({ ok: true, compte: 'client' }, { status: 201 })
 }

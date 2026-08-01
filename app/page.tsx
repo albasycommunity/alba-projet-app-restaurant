@@ -20,7 +20,7 @@ function Splash() {
           alba
         </span>
         <span className="text-xs tracking-wide text-muted-foreground">
-          la gestion de restaurant, sans coupure
+          l'excellence culinaire, simplifiée
         </span>
       </div>
     </div>

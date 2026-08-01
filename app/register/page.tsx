@@ -3,24 +3,44 @@
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
-import { ArrowRightIcon, CheckIcon, EyeIcon, EyeOffIcon, LoaderIcon } from 'lucide-react'
+import {
+  ArrowRightIcon,
+  CheckIcon,
+  EyeIcon,
+  EyeOffIcon,
+  LoaderIcon,
+  StoreIcon,
+  HeartIcon,
+} from 'lucide-react'
+import { PLANS_ABONNEMENT, DUREE_ESSAI_JOURS, type PlanAbonnement } from '@/lib/auth'
 import { LogoMark } from '@/components/landing/logo'
+import { cn } from '@/lib/utils'
 
 const CHAMP =
   'h-12 w-full rounded-xl border border-border bg-secondary/35 px-3.5 text-sm text-foreground outline-none transition-all duration-300 placeholder:text-muted-foreground/50 focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10'
+
+const fcfa = (n: number) =>
+  new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' F'
+
+type Mode = 'restaurant' | 'client'
 
 function PageInscription() {
   const router = useRouter()
   const params = useSearchParams()
   const suivant = params.get('suivant')
+  const planInitial = params.get('plan') === 'annuel' ? 'annuel' : params.get('plan') === 'mensuel' ? 'mensuel' : null
 
+  const [mode, setMode] = useState<Mode>(planInitial ? 'restaurant' : 'client')
+  const [plan, setPlan] = useState<PlanAbonnement>(planInitial ?? 'mensuel')
   const [nom, setNom] = useState('')
   const [email, setEmail] = useState('')
   const [motDePasse, setMotDePasse] = useState('')
+  const [nomRestaurant, setNomRestaurant] = useState('')
+  const [quartier, setQuartier] = useState('')
   const [voir, setVoir] = useState(false)
   const [chargement, setChargement] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
-  const [cree, setCree] = useState(false)
+  const [compteCree, setCompteCree] = useState<null | { type: Mode }>(null)
 
   async function sinscrire(e: React.FormEvent) {
     e.preventDefault()
@@ -30,7 +50,11 @@ function PageInscription() {
       const reponse = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nom, email, motDePasse }),
+        body: JSON.stringify(
+          mode === 'restaurant'
+            ? { nom, email, motDePasse, plan, nomRestaurant, quartier }
+            : { nom, email, motDePasse },
+        ),
       })
       const donnees = await reponse.json()
       if (!reponse.ok) {
@@ -38,9 +62,11 @@ function PageInscription() {
         return
       }
       // Pas de session créée : on ramène vers la connexion.
-      setCree(true)
-      const cible = suivant ? `login?inscrit=1&suivant=${encodeURIComponent(suivant)}` : 'login?inscrit=1'
-      window.setTimeout(() => router.push(cible), 1700)
+      setCompteCree({ type: donnees.compte === 'restaurant' ? 'restaurant' : 'client' })
+      const cible = suivant
+        ? `login?inscrit=1&suivant=${encodeURIComponent(suivant)}`
+        : 'login?inscrit=1'
+      window.setTimeout(() => router.push(cible), 2000)
     } catch {
       setErreur('Le serveur ne répond pas. Réessaie dans un instant.')
     } finally {
@@ -48,7 +74,7 @@ function PageInscription() {
     }
   }
 
-  if (cree) {
+  if (compteCree) {
     return (
       <div className="flex min-h-dvh items-center justify-center px-4">
         <div className="border-ember shadow-float animate-pop w-full max-w-sm rounded-3xl p-8 text-center">
@@ -66,10 +92,19 @@ function PageInscription() {
             </svg>
           </span>
           <h1 className="font-display mt-5 text-2xl font-semibold tracking-tight">
-            Ton compte est prêt
+            {compteCree.type === 'restaurant'
+              ? 'Ton restaurant est prêt'
+              : 'Ton compte est prêt'}
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Tu n'as plus qu'à te connecter avec ton email.
+            {compteCree.type === 'restaurant' ? (
+              <>
+                Ton essai gratuit de {DUREE_ESSAI_JOURS} jours commence
+                maintenant. Connecte-toi pour ouvrir ton back-office.
+              </>
+            ) : (
+              "Tu n'as plus qu'à te connecter avec ton email."
+            )}
           </p>
           <p className="mt-5 flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <LoaderIcon className="size-3.5 animate-spin text-primary" />
@@ -94,14 +129,120 @@ function PageInscription() {
               Crée ton compte alba
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              30 secondes, gratuit. La Carte de Fidélité s'active avec ton
-              compte.
+              {mode === 'restaurant'
+                ? `Ton restaurant démarre avec ${DUREE_ESSAI_JOURS} jours d'essai gratuit.`
+                : "30 secondes, gratuit. La Carte de Fidélité s'active avec ton compte."}
             </p>
           </div>
         </div>
 
         <div className="border-ember shadow-float rounded-3xl p-6 sm:p-7">
-          <form onSubmit={sinscrire} className="flex flex-col gap-4">
+          {/* Choix du type de compte */}
+          <div className="flex gap-1 rounded-xl bg-secondary/60 p-1">
+            <button
+              type="button"
+              onClick={() => setMode('restaurant')}
+              className={cn(
+                'flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-all duration-300 ease-[var(--ease-organic)]',
+                mode === 'restaurant'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <StoreIcon className="size-4" />
+              Mon restaurant
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('client')}
+              className={cn(
+                'flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-all duration-300 ease-[var(--ease-organic)]',
+                mode === 'client'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <HeartIcon className="size-4" />
+              Carte de Fidélité
+            </button>
+          </div>
+
+          {mode === 'restaurant' && (
+            <div className="mt-4">
+              <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                Ton plan
+              </span>
+              <div className="mt-1.5 grid grid-cols-2 gap-2">
+                {(Object.keys(PLANS_ABONNEMENT) as PlanAbonnement[]).map((p) => {
+                  const offre = PLANS_ABONNEMENT[p]
+                  const actif = plan === p
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPlan(p)}
+                      className={cn(
+                        'flex flex-col gap-1 rounded-xl border p-3.5 text-left transition-all duration-300 ease-[var(--ease-spring)]',
+                        actif
+                          ? 'border-primary/50 bg-primary/10'
+                          : 'border-border bg-background hover:border-primary/30',
+                      )}
+                    >
+                      <span className="flex items-center justify-between text-sm font-semibold">
+                        {offre.libelle}
+                        <span
+                          className={cn(
+                            'flex size-4.5 items-center justify-center rounded-full border-2',
+                            actif ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+                          )}
+                        >
+                          {actif && <CheckIcon className="size-3" />}
+                        </span>
+                      </span>
+                      <span className="font-display text-lg font-semibold tracking-tight tnum">
+                        {fcfa(offre.montant)}
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {p === 'mensuel' ? '/mois' : '/an'}
+                        </span>
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {DUREE_ESSAI_JOURS} jours d'essai gratuit
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={sinscrire} className="mt-4 flex flex-col gap-4">
+            {mode === 'restaurant' && (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                  Ton restaurant
+                </span>
+                <input
+                  required
+                  value={nomRestaurant}
+                  onChange={(e) => setNomRestaurant(e.target.value)}
+                  placeholder="Chez Mame Coumba"
+                  className={CHAMP}
+                />
+              </label>
+            )}
+            {mode === 'restaurant' && (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                  Quartier (facultatif)
+                </span>
+                <input
+                  value={quartier}
+                  onChange={(e) => setQuartier(e.target.value)}
+                  placeholder="Ngor, Dakar"
+                  className={CHAMP}
+                />
+              </label>
+            )}
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                 Ton nom complet
@@ -169,7 +310,9 @@ function PageInscription() {
                 <LoaderIcon className="size-4 animate-spin" />
               ) : (
                 <>
-                  Créer mon compte
+                  {mode === 'restaurant'
+                    ? `Commencer l'essai gratuit (${DUREE_ESSAI_JOURS} jours)`
+                    : 'Créer mon compte'}
                   <ArrowRightIcon className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
                 </>
               )}
@@ -188,8 +331,9 @@ function PageInscription() {
         </div>
 
         <p className="mt-5 text-center text-[11px] text-muted-foreground">
-          Le compte client est gratuit. Le back-office du restaurant se
-          débloque avec l'abonnement.
+          {mode === 'restaurant'
+            ? `Aucun paiement maintenant : tu seras guidé·e à la fin des ${DUREE_ESSAI_JOURS} jours.`
+            : 'Le compte client est gratuit. Le back-office du restaurant se débloque avec un plan.'}
         </p>
       </div>
     </div>

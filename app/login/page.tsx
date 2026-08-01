@@ -169,7 +169,7 @@ function PageConnexion() {
                 alba
               </span>
               <span className="text-[11px] text-muted-foreground">
-                la gestion de restaurant, sans coupure
+                l'excellence culinaire, simplifiée
               </span>
             </div>
           </div>

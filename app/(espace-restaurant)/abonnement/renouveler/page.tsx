@@ -17,7 +17,7 @@ import { fcfa } from '@/lib/data'
 
 type Donnees = {
   abonnement: {
-    statut: 'actif' | 'expire' | 'en_attente'
+    statut: 'actif' | 'essai' | 'expire' | 'en_attente'
     plan: PlanAbonnement
     montant: number
     dateFin: string
@@ -82,9 +82,47 @@ export default function PageRenouveler() {
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-success/25 bg-success/8 p-4">
             <CheckCircle2Icon className="size-5 shrink-0 text-success" />
             <p className="text-sm text-muted-foreground">
-              Ton abonnement est déjà actif jusqu’au{' '}
+              Ton abonnement est déjà actif jusqu'au{' '}
               {new Date(donnees.abonnement.dateFin).toLocaleDateString('fr-FR')}.
               Tu peux quand même renouveler par avance.
+            </p>
+          </div>
+        )}
+
+        {statut === 'essai' && donnees?.abonnement && (
+          <div
+            className={`flex flex-wrap items-center gap-2 rounded-xl border p-4 ${
+              donnees.abonnement.joursRestants >= 0
+                ? 'border-primary/30 bg-primary/8'
+                : 'border-destructive/25 bg-destructive/10'
+            }`}
+          >
+            <CheckCircle2Icon
+              className={
+                donnees.abonnement.joursRestants >= 0
+                  ? 'size-5 shrink-0 text-primary'
+                  : 'size-5 shrink-0 text-destructive'
+              }
+            />
+            <p className="text-sm text-muted-foreground">
+              {donnees.abonnement.joursRestants >= 0 ? (
+                <>
+                  Ton essai gratuit court jusqu'au{' '}
+                  <span className="font-medium text-foreground">
+                    {new Date(donnees.abonnement.dateFin).toLocaleDateString('fr-FR')}
+                  </span>
+                  {' '}({donnees.abonnement.joursRestants} jour
+                  {donnees.abonnement.joursRestants > 1 ? 's' : ''} restant
+                  {donnees.abonnement.joursRestants > 1 ? 's' : ''}). Passe au
+                  plan payant maintenant pour continuer sans interruption.
+                </>
+              ) : (
+                <>
+                  Ton essai gratuit est{' '}
+                  <span className="font-medium text-foreground">terminé</span>.
+                  Choisis un plan pour rouvrir le back-office.
+                </>
+              )}
             </p>
           </div>
         )}

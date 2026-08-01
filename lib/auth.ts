@@ -62,10 +62,19 @@ export function destinationPour(role: Role, suivant?: string | null): string {
 
 export type PlanAbonnement = 'mensuel' | 'annuel'
 
-export type StatutAbonnement = 'actif' | 'expire' | 'en_attente'
+/**
+ * Statut d'un abonnement. `essai` est le cycle de découverte : 15 jours
+ * d'accès complet, sans paiement. À échéance, l'accès se bloque (voir
+ * `estAbonnementAccessible`) et le gérant bascule vers son plan payant.
+ */
+export type StatutAbonnement = 'actif' | 'essai' | 'expire' | 'en_attente'
+
+/** Durée de l'essai gratuit accordée à chaque nouveau plan. */
+export const DUREE_ESSAI_JOURS = 15
 
 export const LIBELLES_STATUT: Record<StatutAbonnement, string> = {
   actif: 'Actif',
+  essai: 'Essai gratuit',
   expire: 'Expiré',
   en_attente: 'Paiement en attente',
 }
@@ -146,6 +155,30 @@ export type Abonnement = {
   dateDebut: string
   dateFin: string
   montant: number
+}
+
+/**
+ * Garde d'accès au back-office (utilisée par le proxy et chaque route API) :
+ * - « actif » : accès complet.
+ * - « essai » : accès complet tant que l'échéance des 15 jours n'est pas
+ *   atteinte — ensuite, le blocage est automatique et le gérant bascule
+ *   vers le renouvellement (plan payant).
+ * - « expire » / « en_attente » : accès coupé.
+ *
+ * Point de blocage APRÈS l'essai : rien d'autre à changer — `verifierAccesRestaurant`
+ * renvoie `abonnementActif: false`, le proxy redirige vers /abonnement/renouveler.
+ * La relance, elle, vit dans l'écran Abonnement (bannière « essai restant »).
+ */
+export function estAbonnementAccessible(
+  abonnement: Pick<Abonnement, 'statut' | 'dateFin'> | null,
+  maintenant = new Date(),
+) {
+  if (!abonnement) return false
+  if (abonnement.statut === 'actif') return true
+  if (abonnement.statut === 'essai') {
+    return new Date(abonnement.dateFin).getTime() >= maintenant.getTime()
+  }
+  return false
 }
 
 export type Paiement = {

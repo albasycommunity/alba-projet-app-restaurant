@@ -13,9 +13,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { hashSync } from 'bcryptjs'
 import {
+  DUREE_ESSAI_JOURS,
   Role,
   dateDans,
   dateIso,
+  estAbonnementAccessible,
   nouveauId,
   type Abonnement,
   type CommandeClient,
@@ -233,8 +235,8 @@ export async function fideliteDeClient(userId: string) {
 /**
  * Vérification autoritaire pour un RESTAURANT_ADMIN :
  * le compte utilisateur doit être actif ET l'abonnement de son restaurant
- * en statut « actif ». Réappliquée à chaque requête (proxy + API),
- * jamais seulement côté UI.
+ * accessible (payé « actif » ou essai en cours de validité).
+ * Réappliquée à chaque requête (proxy + API), jamais seulement côté UI.
  */
 export async function verifierAccesRestaurant(
   restaurantId: string | null,
@@ -248,7 +250,7 @@ export async function verifierAccesRestaurant(
   const abonnement = bdd.abonnements
     .filter((a) => a.restaurantId === restaurantId)
     .sort((a, b) => b.dateFin.localeCompare(a.dateFin))[0]
-  const abonnementActif = abonnement?.statut === 'actif'
+  const abonnementActif = estAbonnementAccessible(abonnement)
   return { compteActif, abonnementActif }
 }
 
@@ -292,6 +294,55 @@ export async function creerRestaurantAvecAbonnement(input: {
       dateDebut: dateIso(maintenant),
       dateFin: dateDans(input.plan === 'annuel' ? 365 : 30),
       montant: input.montant,
+    }
+    bdd.restaurants.push(restaurant)
+    bdd.utilisateurs.push(admin)
+    bdd.abonnements.push(abonnement)
+  })
+}
+
+/**
+ * Auto-inscription depuis la vitrine : le restaurant, son compte gérant et
+ * un abonnement en ESSAI GRATUIT (DUREE_ESSAI_JOURS jours, montant 0) sont
+ * créés d'un seul geste. Le plan choisi sur la landing est conservé : la
+ * bascule vers le payant se fait via le flux de renouvellement existant.
+ */
+export async function creerRestaurantEnEssai(input: {
+  nom: string
+  quartier: string
+  gerant: string
+  email: string
+  motDePasse: string
+  plan: PlanAbonnement
+}) {
+  const maintenant = new Date()
+  return muterBdd((bdd) => {
+    const restaurant: Restaurant = {
+      id: nouveauId('r'),
+      nom: input.nom,
+      quartier: input.quartier,
+      gerant: input.gerant,
+      actif: true,
+      creeLe: dateIso(maintenant),
+    }
+    const admin: Utilisateur = {
+      id: nouveauId('u'),
+      email: input.email.trim().toLowerCase(),
+      password_hash: hashSync(input.motDePasse, 10),
+      nom: input.gerant,
+      role: Role.RESTAURANT_ADMIN,
+      restaurantId: restaurant.id,
+      actif: true,
+      creeLe: dateIso(maintenant),
+    }
+    const abonnement: Abonnement = {
+      id: nouveauId('a'),
+      restaurantId: restaurant.id,
+      plan: input.plan,
+      statut: 'essai',
+      dateDebut: dateIso(maintenant),
+      dateFin: dateDans(DUREE_ESSAI_JOURS),
+      montant: 0,
     }
     bdd.restaurants.push(restaurant)
     bdd.utilisateurs.push(admin)

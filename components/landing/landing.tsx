@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-contexte'
 import { LogoComplet } from './logo'
 import { Hero, BandeServices } from './hero'
 import { Fonctionnalites, ParRoles } from './features'
+import { Plans } from './plans'
 import { Temoignages } from './testimonials'
 import { FoireAuxQuestions } from './faq'
 import { BandeCta } from './cta'
@@ -15,7 +16,7 @@ import { PiedDePage } from './footer'
 
 const LIENS = [
   { l: 'Fonctionnalités', h: '#fonctionnalites' },
-  { l: 'Témoignages', h: '#temoignages' },
+  { l: 'Plans', h: '#plans' },
   { l: 'FAQ', h: '#faq' },
 ]
 
@@ -70,7 +71,7 @@ function Navigation() {
                   Se connecter
                 </Link>
                 <Link
-                  href="/register"
+                  href="#plans"
                   className="h-10 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_10px_24px_-12px_oklch(0.65_0.16_38/0.9)] transition-all duration-300 ease-[var(--ease-spring)] hover:bg-primary/90"
                 >
                   Créer mon compte
@@ -121,7 +122,7 @@ function Navigation() {
                     Se connecter
                   </Link>
                   <Link
-                    href="/register"
+                    href="#plans"
                     onClick={() => setMobile(false)}
                     className="flex h-11 items-center justify-center rounded-xl bg-primary font-semibold text-primary-foreground"
                   >
@@ -146,6 +147,7 @@ export function Landing() {
         <BandeServices />
         <Fonctionnalites />
         <ParRoles />
+        <Plans />
         <Temoignages />
         <FoireAuxQuestions />
         <BandeCta />

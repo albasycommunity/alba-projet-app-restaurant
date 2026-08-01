@@ -240,7 +240,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-col leading-tight">
           <span className="font-display text-base font-semibold">alba</span>
           <span className="truncate text-[11px] text-muted-foreground">
-            {restaurantNom ?? 'la gestion de restaurant'}
+            {restaurantNom ?? "l'excellence culinaire"}
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2">

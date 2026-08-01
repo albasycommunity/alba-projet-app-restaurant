@@ -21,7 +21,7 @@ const FAQ = [
   },
   {
     q: "Puis-je essayer avant de m'abonner ?",
-    r: "Oui : crée un compte client gratuit et explore la plateforme. L'abonnement ne se déclenche que quand tu es prêt à ouvrir le back-office de ton établissement.",
+    r: "Oui — chaque plan démarre avec 15 jours d'essai gratuit, sans paiement. Le back-office est entièrement ouvert dès le premier jour. À la fin de l'essai, tu passes au plan payant que tu as choisi pour continuer ; le compte client, lui, reste gratuit.",
   },
   {
     q: 'Faut-il un matériel spécifique ?',

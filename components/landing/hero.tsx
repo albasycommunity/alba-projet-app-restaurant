@@ -191,9 +191,9 @@ export function Hero() {
         </div>
 
         <h1 className="animate-rise font-display mt-6 text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl [animation-delay:80ms]">
-          La gestion de restaurant,
+          L'excellence culinaire,
           <br />
-          <span className="text-ember">sans coupure.</span>
+          <span className="text-ember">simplifiée.</span>
         </h1>
 
         <p className="animate-rise mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground text-pretty sm:text-base [animation-delay:160ms]">
@@ -205,10 +205,10 @@ export function Hero() {
 
         <div className="animate-rise mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row [animation-delay:240ms]">
           <Link
-            href="/register"
+            href="#plans"
             className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.02] hover:bg-primary/90 active:scale-[0.98] sm:w-auto"
           >
-            Créer mon compte
+            Commencer l'essai gratuit
             <ArrowRightIcon className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
           </Link>
           <Link

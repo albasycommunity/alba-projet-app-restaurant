@@ -162,7 +162,7 @@ export function ParRoles() {
 
         <div className="mt-10 text-center">
           <Link
-            href="/register"
+            href="#plans"
             className="group inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-primary/80"
           >
             Commencer gratuitement

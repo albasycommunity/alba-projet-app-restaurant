@@ -13,7 +13,7 @@ const spaceGrotesk = Space_Grotesk({
 })
 
 export const metadata: Metadata = {
-  title: 'alba — la gestion de restaurant, sans coupure',
+  title: 'alba — l’excellence culinaire, simplifiée',
   description:
     'alba est l’app de gestion de restaurant offline-first pensée pour le terrain sénégalais : caisse résiliente, cuisine, stock, hygiène, équipe, fidélité et pilotage.',
   generator: 'v0.app',

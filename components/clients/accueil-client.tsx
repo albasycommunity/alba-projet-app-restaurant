@@ -137,7 +137,7 @@ export function AccueilClient() {
           <span className="truncate text-[11px] text-muted-foreground">
             {restaurant
               ? restaurant.quartier
-              : 'la gestion de restaurant, sans coupure'}
+              : "l'excellence culinaire, simplifiée"}
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2">

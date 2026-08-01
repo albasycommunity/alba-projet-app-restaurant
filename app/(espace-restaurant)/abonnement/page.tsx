@@ -16,7 +16,7 @@ type DonneesAbonnement = {
   abonnement: {
     id: string
     plan: 'mensuel' | 'annuel'
-    statut: 'actif' | 'expire' | 'en_attente'
+    statut: 'actif' | 'essai' | 'expire' | 'en_attente'
     dateDebut: string
     dateFin: string
     montant: number
@@ -90,7 +90,7 @@ export default function PageAbonnement() {
                 libelle="Statut"
                 valeur={
                   <Badge
-                    ton={statut === 'actif' ? 'succes' : statut === 'en_attente' ? 'attention' : 'alerte'}
+                    ton={statut === 'actif' ? 'succes' : statut === 'essai' ? 'primaire' : statut === 'en_attente' ? 'attention' : 'alerte'}
                     className="text-sm"
                   >
                     {LIBELLES_STATUT[statut]}
@@ -117,6 +117,31 @@ export default function PageAbonnement() {
               />
             </div>
 
+            {statut === 'essai' && (
+              <div className="animate-halo rounded-xl border border-primary/30 bg-primary/8 p-4">
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm font-semibold">
+                    Essai gratuit — {abonnement.joursRestants} jour
+                    {abonnement.joursRestants > 1 ? 's' : ''} restant
+                    {abonnement.joursRestants > 1 ? 's' : ''}
+                  </p>
+                  <Progress valeur={Math.max(0, (abonnement.joursRestants / 15) * 100)} ton="primaire" />
+                  <p className="text-xs text-muted-foreground">
+                    {abonnement.joursRestants <= 7
+                      ? `L'essai se termine bientôt. Choisis ton plan payant (${PLANS_ABONNEMENT[abonnement.plan].libelle.toLowerCase()}) pour continuer sans interruption.`
+                      : `Profite de tout le back-office pendant ton essai. À l'échéance, passe au plan ${PLANS_ABONNEMENT[abonnement.plan].libelle.toLowerCase()} pour continuer.`}
+                  </p>
+                </div>
+                <Link
+                  href="/abonnement/renouveler"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground"
+                >
+                  Passer au plan payant
+                  <ArrowRightIcon className="size-3.5" />
+                </Link>
+              </div>
+            )}
+
             {statut === 'actif' && abonnement.joursRestants <= 7 && (
               <div className="animate-halo rounded-xl border border-warning/30 bg-warning/10 p-4">
                 <div className="flex flex-col gap-2">
@@ -131,7 +156,7 @@ export default function PageAbonnement() {
               </div>
             )}
 
-            {statut !== 'actif' && (
+            {(statut === 'expire' || statut === 'en_attente') && (
               <div className="animate-halo rounded-xl border border-destructive/25 bg-destructive/10 p-4">
                 <p className="text-sm font-semibold">
                   {statut === 'expire'
