@@ -10,7 +10,7 @@ import {
   FlameIcon,
   HeartIcon,
   LayoutGridIcon,
-  LifeBuoyIcon,
+  LogOutIcon,
   MoonIcon,
   PackageIcon,
   ReceiptTextIcon,
@@ -22,6 +22,7 @@ import {
 import { cn } from '@/lib/utils'
 import { RESTAURANT } from '@/lib/data'
 import { useAlba } from '@/lib/store'
+import { useAuth } from '@/lib/auth-contexte'
 import { SyncPill } from '@/components/sync-pill'
 import { Notifs } from '@/components/notifs'
 import { Palette } from '@/components/palette'
@@ -38,18 +39,18 @@ type Entree = {
 
 /** Les 4 écrans du service quotidien restent au pouce ; le reste passe dans « Plus ». */
 const PRINCIPAL: Entree[] = [
-  { href: '/', label: 'Pilotage', short: 'Pilotage', icon: ChartPieIcon },
+  { href: '/pilotage', label: 'Pilotage', short: 'Pilotage', icon: ChartPieIcon },
   { href: '/caisse', label: 'Caisse', short: 'Caisse', icon: ScanBarcodeIcon },
   { href: '/cuisine', label: 'Cuisine', short: 'Cuisine', icon: FlameIcon, alerte: 'cuisine' },
   { href: '/stock', label: 'Stock', short: 'Stock', icon: PackageIcon, alerte: 'stock' },
 ]
 
 const SECONDAIRE: Entree[] = [
+  { href: '/back-office', label: 'Back-office', short: 'Back-office', icon: LayoutGridIcon },
   { href: '/hygiene', label: 'Hygiène', short: 'Hygiène', icon: ClipboardCheckIcon, alerte: 'haccp' },
   { href: '/equipe', label: 'Équipe', short: 'Équipe', icon: UsersIcon },
   { href: '/clients', label: 'Clients', short: 'Clients', icon: HeartIcon },
   { href: '/abonnement', label: 'Abonnement', short: 'Abonnement', icon: ReceiptTextIcon },
-  { href: '/console', label: 'Console alba', short: 'Console', icon: LifeBuoyIcon },
 ]
 
 export const NAV_COMPLET = [...PRINCIPAL, ...SECONDAIRE]
@@ -76,6 +77,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { indicateurs, etat } = useAlba()
+  const { utilisateur, deconnecter } = useAuth()
   const [clair, setClair] = useState(false)
   const [plus, setPlus] = useState(false)
   const [palette, setPalette] = useState(false)
@@ -217,9 +219,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {RESTAURANT.gerante}
               </span>
               <span className="truncate text-[11px] text-muted-foreground">
-                {RESTAURANT.quartier}
+                {utilisateur?.email ?? RESTAURANT.quartier}
               </span>
             </div>
+            <button
+              type="button"
+              onClick={deconnecter}
+              aria-label="Se déconnecter"
+              title="Se déconnecter"
+              className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+            >
+              <LogOutIcon className="size-4" />
+            </button>
           </div>
         </div>
       </aside>
@@ -343,9 +354,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex min-w-0 flex-col leading-tight">
               <span className="text-sm font-medium">{RESTAURANT.gerante}</span>
               <span className="text-[11px] text-muted-foreground">
-                {RESTAURANT.quartier}
+                {utilisateur?.email ?? RESTAURANT.quartier}
               </span>
             </div>
+            <button
+              type="button"
+              onClick={deconnecter}
+              className="ml-auto flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+            >
+              <LogOutIcon className="size-3.5" />
+              Quitter
+            </button>
           </div>
         </div>
       </Sheet>

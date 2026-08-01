@@ -68,7 +68,7 @@ const ACTIONS: Commande[] = [
     motsCles: 'clients fidélité points menu whatsapp partage anniversaire',
   },
   {
-    href: '/',
+    href: '/pilotage',
     titre: 'Ouvrir le pilotage',
     detail: 'Chiffre d’affaires, marges, affluence',
     icon: ChartPieIcon,

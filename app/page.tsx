@@ -1,236 +1,417 @@
-import {
-  ArrowRightIcon,
-  ShareIcon,
-  TargetIcon,
-  TrendingUpIcon,
-  TriangleAlertIcon,
-} from 'lucide-react'
+'use client'
+
 import Link from 'next/link'
-import { Badge, Card, CardTitle, PageHeader } from '@/components/kit'
-import { CountUp } from '@/components/count-up'
+import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  AFFLUENCE,
-  CA_JOUR,
-  MENU,
-  OBJECTIF_JOUR,
-  PAIEMENTS_JOUR,
-  STOCK,
-  TICKETS_JOUR,
-  fcfa,
-} from '@/lib/data'
+  BadgeCheckIcon,
+  HeartIcon,
+  LoaderIcon,
+  MinusIcon,
+  PlusIcon,
+  ShoppingBagIcon,
+  XIcon,
+} from 'lucide-react'
+import { Badge, Card, Sheet } from '@/components/kit'
+import { useAuth } from '@/lib/auth-contexte'
+import { useMenu } from '@/components/menu-store'
+import { CATEGORIES, PALIERS, niveauPour, prochainPalier } from '@/lib/data'
 
-const maxAffluence = Math.max(...AFFLUENCE.map((a) => a.ca))
-const topPlats = [...MENU].sort((a, b) => b.vendusJour - a.vendusJour).slice(0, 5)
-const alertesStock = STOCK.filter((i) => i.stock < i.seuil)
-const partObjectif = Math.round((CA_JOUR / OBJECTIF_JOUR) * 100)
+type LignePanier = { platId: string; nom: string; prix: number; qte: number }
 
-export default function PilotagePage() {
+const fcfa = (n: number) =>
+  new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' F'
+
+export default function AccueilClient() {
+  const router = useRouter()
+  const { utilisateur, chargement: chargementAuth, deconnecter } = useAuth()
+  const { platsActifs } = useMenu()
+
+  const [panier, setPanier] = useState<LignePanier[]>([])
+  const [panierOuvert, setPanierOuvert] = useState(false)
+  const [commande, setCommande] = useState<{
+    ref: string
+    total: number
+    pointsGagnes: number
+  } | null>(null)
+  const [envoi, setEnvoi] = useState(false)
+  const [erreur, setErreur] = useState<string | null>(null)
+
+  const [fidelite, setFidelite] = useState<{
+    points: number
+    visites: number
+  } | null>(null)
+
+  useEffect(() => {
+    if (utilisateur?.role !== 'CLIENT') return
+    fetch('/api/client/fidelite', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setFidelite(d.fidelite))
+      .catch(() => setFidelite(null))
+  }, [utilisateur])
+
+  const total = useMemo(
+    () => panier.reduce((s, l) => s + l.prix * l.qte, 0),
+    [panier],
+  )
+  const nombrePlats = panier.reduce((s, l) => s + l.qte, 0)
+
+  function ajouter(platId: string, nom: string, prix: number) {
+    setPanier((liste) => {
+      const existante = liste.find((l) => l.platId === platId)
+      return existante
+        ? liste.map((l) =>
+            l.platId === platId ? { ...l, qte: l.qte + 1 } : l,
+          )
+        : [...liste, { platId, nom, prix, qte: 1 }]
+    })
+  }
+
+  function retirer(platId: string) {
+    setPanier((liste) =>
+      liste
+        .map((l) => (l.platId === platId ? { ...l, qte: l.qte - 1 } : l))
+        .filter((l) => l.qte > 0),
+    )
+  }
+
+  async function commander() {
+    if (!utilisateur) {
+      router.push('/login')
+      return
+    }
+    setErreur(null)
+    setEnvoi(true)
+    try {
+      const reponse = await fetch('/api/client/commandes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lignes: panier }),
+      })
+      const donnees = await reponse.json()
+      if (!reponse.ok) {
+        setErreur(donnees.erreur ?? 'Commande impossible.')
+        return
+      }
+      setCommande(donnees)
+      setPanier([])
+      setPanierOuvert(false)
+    } catch {
+      setErreur('Le serveur ne répond pas. Réessaie dans un instant.')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  const niveau = fidelite ? niveauPour(fidelite.points) : null
+  const prochain = fidelite ? prochainPalier(fidelite.points) : null
+
   return (
-    <div className="flex flex-col">
-      <PageHeader
-        titre="Bonjour Fatou"
-        sous="Voilà où en est ta journée. Le rapport partira tout seul sur WhatsApp à la fermeture."
-        action={
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground transition-transform duration-300 ease-[var(--ease-spring)] hover:scale-[1.03]"
-          >
-            <ShareIcon className="size-4" />
-            Envoyer le rapport
-          </button>
-        }
-      />
-
-      <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-3 lg:p-8">
-        {/* CA du jour */}
-        <Card className="animate-rise ring-glow lg:col-span-2">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Chiffre d’affaires aujourd’hui
+    <div className="flex min-h-dvh flex-col pb-28">
+      {/* En-tête */}
+      <header className="glass sticky top-0 z-40 flex items-center gap-3 border-b border-border px-4 py-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground">
+          a
+        </span>
+        <div className="flex min-w-0 flex-col leading-tight">
+          <span className="font-display text-base font-semibold">Chez Fatou</span>
+          <span className="truncate text-[11px] text-muted-foreground">
+            Ngor, Dakar · tous les jours de 7 h à 23 h
+          </span>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {chargementAuth ? null : utilisateur ? (
+            <div className="flex items-center gap-2 rounded-full bg-secondary/70 py-1 pr-3 pl-1">
+              <span className="flex size-7 items-center justify-center rounded-full bg-primary/20 text-[11px] font-semibold text-primary">
+                {utilisateur.nom
+                  .split(/\s+/)
+                  .filter(Boolean)
+                  .map((m) => m[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase()}
               </span>
-              <p className="font-display text-4xl font-semibold tracking-tight sm:text-5xl">
-                <CountUp valeur={CA_JOUR} />
-                <span className="ml-1 text-2xl text-muted-foreground">FCFA</span>
-              </p>
-              <div className="mt-1 flex items-center gap-2">
-                <Badge ton="succes">
-                  <TrendingUpIcon className="size-3" />
-                  +18 % vs hier
-                </Badge>
-                <span className="text-xs text-muted-foreground tnum">
-                  {TICKETS_JOUR} tickets · panier{' '}
-                  {fcfa(Math.round(CA_JOUR / TICKETS_JOUR))}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col items-end gap-2">
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <TargetIcon className="size-3.5" />
-                Objectif {fcfa(OBJECTIF_JOUR)}
+              <span className="hidden text-xs font-medium sm:inline">
+                {utilisateur.nom.split(' ')[0]}
               </span>
-              <div className="h-2 w-40 overflow-hidden rounded-full bg-secondary">
-                <div
-                  className="h-full rounded-full bg-primary transition-[width] duration-1000 ease-[var(--ease-organic)]"
-                  style={{ width: `${partObjectif}%` }}
-                />
-              </div>
-              <span className="font-display text-sm font-semibold text-primary tnum">
-                {partObjectif} %
-              </span>
-            </div>
-          </div>
-
-          {/* Heures d'affluence */}
-          <div className="mt-6">
-            <CardTitle
-              aside={
-                <span className="text-[11px] text-muted-foreground">
-                  Pic à 13h
-                </span>
-              }
-            >
-              Heures d’affluence
-            </CardTitle>
-            <div className="flex h-32 items-end gap-1.5">
-              {AFFLUENCE.map((a, i) => {
-                const h = Math.round((a.ca / maxAffluence) * 100)
-                const pic = a.ca === maxAffluence
-                return (
-                  <div
-                    key={a.heure}
-                    className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
-                  >
-                    <div
-                      className={`w-full rounded-t-md transition-all duration-700 ease-[var(--ease-spring)] ${
-                        pic ? 'bg-primary' : 'bg-primary/25'
-                      }`}
-                      style={{
-                        height: `${h}%`,
-                        animation: `alba-rise 0.6s var(--ease-organic) ${i * 40}ms both`,
-                      }}
-                      title={`${a.heure} — ${a.ca} k FCFA`}
-                    />
-                    <span className="text-[10px] text-muted-foreground tnum">
-                      {a.heure}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </Card>
-
-        {/* Réconciliation des encaissements */}
-        <Card className="animate-rise">
-          <CardTitle
-            aside={<Badge ton="succes">Réconcilié</Badge>}
-          >
-            Encaissements du jour
-          </CardTitle>
-          <ul className="flex flex-col gap-3">
-            {PAIEMENTS_JOUR.map((p) => (
-              <li key={p.mode} className="flex flex-col gap-1.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-sm">{p.mode}</span>
-                  <span className="font-display text-sm font-semibold tnum">
-                    {fcfa(p.montant)}
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
-                  <div
-                    className="h-full rounded-full bg-accent transition-[width] duration-1000 ease-[var(--ease-organic)]"
-                    style={{ width: `${p.part}%` }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 rounded-lg bg-secondary/60 p-3 text-xs leading-relaxed text-muted-foreground">
-            Aucun écart entre la caisse physique et le mobile money. Jërëjëf
-            Sokhna.
-          </p>
-        </Card>
-
-        {/* Plats les plus vendus + marge */}
-        <Card className="animate-rise lg:col-span-2">
-          <CardTitle
-            aside={
-              <Link
-                href="/stock"
-                className="flex items-center gap-1 text-[11px] text-primary hover:underline"
+              <button
+                type="button"
+                onClick={deconnecter}
+                className="text-[11px] text-muted-foreground hover:text-destructive"
               >
-                Food cost détaillé
-                <ArrowRightIcon className="size-3" />
-              </Link>
-            }
-          >
-            Plats les plus vendus
-          </CardTitle>
-          <ul className="flex flex-col divide-y divide-border">
-            {topPlats.map((p) => {
-              const marge = 100 - p.foodCost
-              return (
-                <li
-                  key={p.id}
-                  className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary font-display text-xs font-semibold tnum">
-                    {p.vendusJour}
-                  </span>
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm font-medium">{p.nom}</span>
-                    <span className="text-xs text-muted-foreground tnum">
-                      {fcfa(p.prix)} · food cost {p.foodCost} %
+                Quitter
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-lg bg-secondary px-3 py-2 text-xs font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
+            >
+              Se connecter
+            </Link>
+          )}
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-4xl flex-1 px-4 sm:px-6">
+        {/* Héro */}
+        <section className="animate-rise mt-6 rounded-2xl border border-border bg-card p-6 sm:p-8">
+          <Badge ton="primaire">Carte du jour</Badge>
+          <h1 className="font-display mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+            La vraie cuisine de Dakar,
+            <br />
+            chez toi en quelques minutes.
+          </h1>
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">
+            Thiéboudienne, yassa, dibi : commande en ligne, retrait au
+            comptoir ou livraison. Et à chaque commande, ta Carte de
+            Fidélité engrange des points.
+          </p>
+        </section>
+
+        {/* Carte de fidélité */}
+        <section className="mt-6">
+          <Card className="animate-rise ring-glow">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                <HeartIcon className="size-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-display text-sm font-semibold">
+                  Carte de Fidélité
+                </h2>
+                {niveau && fidelite ? (
+                  <p className="text-xs text-muted-foreground">
+                    {fidelite.points} points · niveau{' '}
+                    <span className="font-medium text-foreground">{niveau}</span>
+                    {' · '}
+                    {fidelite.visites} visites
+                    {prochain &&
+                      ` · encore ${prochain.manque} points pour ${prochain.niveau}`}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {utilisateur
+                      ? 'Commande et tes points s’ajoutent ici.'
+                      : 'Crée ton compte et gagne 1 point pour chaque 100 F dépensés.'}
+                  </p>
+                )}
+              </div>
+              {utilisateur ? (
+                <div className="flex flex-col gap-1">
+                  {PALIERS.map((p) => (
+                    <span key={p.niveau} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <BadgeCheckIcon
+                        className={`size-3.5 ${
+                          niveau === p.niveau ? 'text-primary' : 'text-muted-foreground/40'
+                        }`}
+                      />
+                      {p.niveau} — {p.avantage}
                     </span>
-                  </div>
-                  <Badge ton={marge >= 65 ? 'succes' : marge >= 58 ? 'attention' : 'alerte'}>
-                    marge {marge} %
-                  </Badge>
-                </li>
+                  ))}
+                </div>
+              ) : (
+                <Link
+                  href="/register"
+                  className="rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-transform duration-300 ease-[var(--ease-spring)] hover:scale-[1.03]"
+                >
+                  Créer ma carte
+                </Link>
+              )}
+            </div>
+          </Card>
+        </section>
+
+        {/* Menu */}
+        <section className="mt-8">
+          <h2 className="font-display text-lg font-semibold tracking-tight">
+            La carte
+          </h2>
+          <div className="mt-4 flex flex-col gap-6">
+            {CATEGORIES.map((categorie) => {
+              const plats = platsActifs.filter((p) => p.categorie === categorie)
+              if (plats.length === 0) return null
+              return (
+                <div key={categorie}>
+                  <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    {categorie}
+                  </h3>
+                  <ul className="mt-2 flex flex-col divide-y divide-border">
+                    {plats.map((plat) => (
+                      <li
+                        key={plat.id}
+                        className="flex items-center gap-3 py-3"
+                      >
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-medium">
+                              {plat.nom}
+                            </span>
+                            {plat.rupture && (
+                              <Badge ton="alerte">Rupture</Badge>
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground tnum">
+                            {fcfa(plat.prix)}
+                          </span>
+                        </div>
+                        {plat.rupture ? (
+                          <span className="text-xs text-muted-foreground">
+                            Bientôt
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 text-center font-display text-sm font-semibold tnum">
+                              {panier.find((l) => l.platId === plat.id)?.qte ?? 0}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Ajouter ${plat.nom}`}
+                              onClick={() => ajouter(plat.id, plat.nom, plat.prix)}
+                              className="flex size-9 items-center justify-center rounded-xl border border-primary/40 bg-primary/15 text-primary transition-transform duration-200 ease-[var(--ease-spring)] active:scale-90"
+                            >
+                              <PlusIcon className="size-4" />
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )
             })}
-          </ul>
-        </Card>
+          </div>
+        </section>
 
-        {/* Ce qui demande une décision maintenant */}
-        <Card className="animate-rise">
-          <CardTitle>À décider maintenant</CardTitle>
-          <ul className="flex flex-col gap-2">
-            {alertesStock.map((i) => (
-              <li
-                key={i.id}
-                className="animate-halo flex items-center gap-3 rounded-lg border border-destructive/25 bg-destructive/8 p-3"
+        {/* Confirmation */}
+        {commande && (
+          <Card className="animate-rise mt-8 border-success/30 bg-success/8">
+            <div className="flex flex-col gap-1">
+              <Badge ton="succes">Commande reçue par le restaurant</Badge>
+              <h2 className="font-display mt-2 text-xl font-semibold">
+                Jërëjëf, {utilisateur?.nom.split(' ')[0]} !
+              </h2>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Référence <span className="font-semibold text-foreground">{commande.ref}</span>
+                {' · '}
+                {fcfa(commande.total)}
+                {commande.pointsGagnes > 0 && (
+                  <>
+                    {' · '}
+                    <span className="font-medium text-success">
+                      +{commande.pointsGagnes} points fidélité
+                    </span>
+                  </>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => setCommande(null)}
+                className="mt-3 self-start text-xs font-medium text-primary hover:underline"
               >
-                <TriangleAlertIcon className="size-4 shrink-0 text-destructive" />
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm font-medium">{i.nom}</span>
+                Commander encore
+              </button>
+            </div>
+          </Card>
+        )}
+
+        {erreur && (
+          <p className="mt-6 rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+            {erreur}
+          </p>
+        )}
+      </main>
+
+      {/* Barre panier flottante */}
+      {nombrePlats > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={() => setPanierOuvert(true)}
+            className="animate-rise mx-auto flex w-full max-w-xl items-center gap-3 rounded-2xl bg-primary px-4 py-3.5 text-primary-foreground shadow-xl transition-transform duration-300 ease-[var(--ease-spring)] active:scale-[0.98]"
+          >
+            <ShoppingBagIcon className="size-5 shrink-0" />
+            <span className="text-sm font-medium">
+              {nombrePlats} plat{nombrePlats > 1 ? 's' : ''}
+            </span>
+            <span className="ml-auto font-display text-base font-semibold tnum">
+              {fcfa(total)}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Feuille panier */}
+      <Sheet
+        ouvert={panierOuvert}
+        onFermer={() => setPanierOuvert(false)}
+        titre="Ta commande"
+        sous="La cuisine reçoit la commande immédiatement."
+        pied={
+          <button
+            type="button"
+            onClick={commander}
+            disabled={envoi || panier.length === 0}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary font-medium text-primary-foreground transition-all duration-300 ease-[var(--ease-spring)] active:scale-[0.98] disabled:opacity-60"
+          >
+            {envoi ? (
+              <LoaderIcon className="size-4 animate-spin" />
+            ) : utilisateur ? (
+              <>
+                Commander · {fcfa(total)}
+              </>
+            ) : (
+              'Se connecter pour commander'
+            )}
+          </button>
+        }
+      >
+        {panier.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Ton panier est vide.
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-border">
+            {panier.map((ligne) => (
+              <li key={ligne.platId} className="flex items-center gap-3 py-3">
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium">{ligne.nom}</span>
                   <span className="text-xs text-muted-foreground tnum">
-                    {i.stock} {i.unite} restants · seuil {i.seuil}
+                    {fcfa(ligne.prix)} × {ligne.qte}
                   </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-label={`Retirer un ${ligne.nom}`}
+                    onClick={() => retirer(ligne.platId)}
+                    className="flex size-8 items-center justify-center rounded-lg bg-secondary text-muted-foreground active:scale-90"
+                  >
+                    <MinusIcon className="size-3.5" />
+                  </button>
+                  <span className="w-6 text-center font-display text-sm font-semibold tnum">
+                    {ligne.qte}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Ajouter un ${ligne.nom}`}
+                    onClick={() => ajouter(ligne.platId, ligne.nom, ligne.prix)}
+                    className="flex size-8 items-center justify-center rounded-lg bg-primary/15 text-primary active:scale-90"
+                  >
+                    <PlusIcon className="size-3.5" />
+                  </button>
                 </div>
               </li>
             ))}
-            <li className="flex items-center gap-3 rounded-lg border border-border bg-secondary/50 p-3">
-              <div className="flex min-w-0 flex-col">
-                <span className="text-sm font-medium">
-                  2 relevés HACCP à faire
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Avant le service du soir
-                </span>
-              </div>
-              <Link
-                href="/hygiene"
-                className="ml-auto text-[11px] font-medium text-primary hover:underline"
-              >
-                Ouvrir
-              </Link>
-            </li>
           </ul>
-        </Card>
-      </div>
+        )}
+        {!utilisateur && (
+          <p className="mt-3 rounded-lg bg-secondary/50 p-3 text-xs text-muted-foreground">
+            Commande réservée aux clients inscrits : les points fidélité
+            tombent automatiquement.
+          </p>
+        )}
+      </Sheet>
     </div>
   )
 }
