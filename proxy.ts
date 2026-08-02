@@ -20,8 +20,11 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server'
-import { PAGE_ACCES_REFUSE, Role, zonesStaff } from '@/lib/auth'
-import { verifierSession } from '@/lib/server/auth'
+import { NOM_COOKIE_SESSION, PAGE_ACCES_REFUSE, Role, zonesStaff } from '@/lib/auth'
+import {
+  optionsCookie,
+  verifierSession,
+} from '@/lib/server/auth'
 import { trouverUtilisateur, verifierAccesRestaurant } from '@/lib/server/bdd'
 
 /** Zones réservées au back-office du restaurant : abonnement obligatoire. */
@@ -57,11 +60,31 @@ function rediriger(
   destination: string,
   avecSuivant = false,
 ) {
+  // Garde anti-boucle : on ne se redirige jamais vers la page où l'on est
+  // déjà — sinon deux routes qui se renvoient la balle bouclent à l'infini
+  // (ex. /login → /login pour un compte invalide).
+  if (request.nextUrl.pathname === destination) {
+    return NextResponse.next()
+  }
   const url = new URL(destination, request.url)
   if (avecSuivant) {
     url.searchParams.set('suivant', request.nextUrl.pathname)
   }
   return NextResponse.redirect(url)
+}
+
+/**
+ * Compte inexistant ou désactivé : la session est DÉTRUITE (cookie expiré)
+ * avant la redirection. Sans cela, le cookie fantôme reste valide à chaque
+ * requête et le proxy re-redirige indéfiniment vers /login.
+ */
+function fermerSessionEtRediriger(request: NextRequest, destination: string) {
+  const reponse = rediriger(request, destination)
+  reponse.cookies.set(NOM_COOKIE_SESSION, '', {
+    ...optionsCookie(),
+    maxAge: 0,
+  })
+  return reponse
 }
 
 export async function proxy(request: NextRequest) {
@@ -96,6 +119,9 @@ export async function proxy(request: NextRequest) {
 
   /* ------------------------- SUPER_ADMIN ------------------------ */
   if (session.role === Role.SUPER_ADMIN) {
+    if (!compteActif.compteActif) {
+      return fermerSessionEtRediriger(request, '/login')
+    }
     if (zoneSuperAdmin) return NextResponse.next()
     if (pageAuth) return rediriger(request, '/super-admin')
     return NextResponse.next()
@@ -104,7 +130,7 @@ export async function proxy(request: NextRequest) {
   /* ---------------------- RESTAURANT_ADMIN ---------------------- */
   if (session.role === Role.RESTAURANT_ADMIN) {
     if (!compteActif.compteActif) {
-      return rediriger(request, '/login')
+      return fermerSessionEtRediriger(request, '/login')
     }
     if (zoneSuperAdmin) return rediriger(request, '/back-office')
     if (zoneAbonnement) return NextResponse.next()
@@ -125,7 +151,7 @@ export async function proxy(request: NextRequest) {
     // l'accès change à la requête suivante — pas à la reconnexion.
     const utilisateur = await trouverUtilisateur(session.uid)
     if (!utilisateur || !utilisateur.actif) {
-      return rediriger(request, '/login')
+      return fermerSessionEtRediriger(request, '/login')
     }
     const zonesAutorisees = zonesStaff(utilisateur.permissions ?? [])
     const premiereZone = zonesAutorisees[0]
@@ -148,6 +174,9 @@ export async function proxy(request: NextRequest) {
   }
 
   /* --------------------------- CLIENT --------------------------- */
+  if (!compteActif.compteActif) {
+    return fermerSessionEtRediriger(request, '/login')
+  }
   if (zoneBackOffice || zoneAbonnement || zoneSuperAdmin) {
     return rediriger(request, '/login')
   }

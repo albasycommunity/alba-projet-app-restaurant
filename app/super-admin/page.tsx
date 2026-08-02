@@ -4,10 +4,13 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   BanIcon,
   CheckCircle2Icon,
+  CreditCardIcon,
   KeyRoundIcon,
   LoaderIcon,
   PlusIcon,
   RefreshCwIcon,
+  SaveIcon,
+  SmartphoneIcon,
   StoreIcon,
   UsersIcon,
   WalletIcon,
@@ -86,7 +89,7 @@ type Overview = {
   paiementsRecents: PaiementVue[]
 }
 
-type Onglet = 'vue' | 'restaurants' | 'comptes'
+type Onglet = 'vue' | 'restaurants' | 'comptes' | 'paiement'
 
 function statutTon(s: StatutAbonnement) {
   return s === 'actif'
@@ -177,6 +180,7 @@ export default function PageSuperAdmin() {
             { valeur: 'vue', libelle: 'Vue d’ensemble' },
             { valeur: 'restaurants', libelle: 'Restaurants & abonnements' },
             { valeur: 'comptes', libelle: 'Comptes' },
+            { valeur: 'paiement', libelle: 'Moyens de paiement' },
           ]}
         />
 
@@ -212,6 +216,7 @@ export default function PageSuperAdmin() {
               {onglet === 'comptes' && (
                 <Comptes donnees={donnees} enTravail={enTravail} onAction={action} />
               )}
+              {onglet === 'paiement' && <MoyensPaiement />}
             </>
           )
         )}
@@ -672,5 +677,331 @@ function CreerRestaurant({
         </p>
       )}
     </Sheet>
+  )
+}
+
+/* ------------------------- Moyens de paiement ------------------------- */
+
+type VueNabooPay = {
+  actif: boolean
+  apiKeyConfiguree: boolean
+  webhookSecretConfiguree: boolean
+  etat: string
+  mock: boolean
+}
+
+type DonneesPaiement = {
+  numerosMobileMoney: Record<string, string>
+  naboopay: VueNabooPay
+  fournisseurs: { code: string; nom: string; etat: string }[]
+  webhookUrl: string
+}
+
+const ETATS_NABOOPAY: Record<string, { libelle: string; ton: 'succes' | 'primaire' | 'attention' | 'alerte' | 'neutre' }> = {
+  actif: { libelle: 'Actif', ton: 'succes' },
+  actif_simulation: { libelle: 'Actif (simulation)', ton: 'primaire' },
+  simulation_desactive: { libelle: 'Simulation, désactivé', ton: 'neutre' },
+  incomplet: { libelle: 'Activé sans clé API', ton: 'alerte' },
+  configure_desactive: { libelle: 'Configuré, désactivé', ton: 'neutre' },
+  non_configure: { libelle: 'Non configuré', ton: 'alerte' },
+  bientot: { libelle: 'Bientôt', ton: 'neutre' },
+}
+
+function MoyensPaiement() {
+  const [donnees, setDonnees] = useState<DonneesPaiement | null>(null)
+  const [numeros, setNumeros] = useState<Record<string, string>>({})
+  const [naboopay, setNaboopay] = useState({
+    actif: false,
+    apiKey: '',
+    webhookSecret: '',
+  })
+  const [chargement, setChargement] = useState(true)
+  const [enregistrement, setEnregistrement] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [erreur, setErreur] = useState<string | null>(null)
+
+  const charger = useCallback(async () => {
+    setChargement(true)
+    try {
+      const reponse = await fetch('/api/super-admin/paiement', {
+        cache: 'no-store',
+      })
+      const d = await reponse.json()
+      if (!reponse.ok) {
+        setErreur(d.erreur ?? 'Impossible de charger la configuration.')
+        return
+      }
+      setDonnees(d)
+      setNumeros(d.numerosMobileMoney)
+      setNaboopay({ actif: d.naboopay.actif, apiKey: '', webhookSecret: '' })
+    } catch {
+      setErreur('Le serveur ne répond pas.')
+    } finally {
+      setChargement(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    charger()
+  }, [charger])
+
+  async function enregistrer() {
+    setErreur(null)
+    setMessage(null)
+    setEnregistrement(true)
+    try {
+      const reponse = await fetch('/api/super-admin/paiement', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          numerosMobileMoney: numeros,
+          naboopay: {
+            actif: naboopay.actif,
+            apiKey: naboopay.apiKey,
+            webhookSecret: naboopay.webhookSecret,
+          },
+        }),
+      })
+      const d = await reponse.json()
+      if (!reponse.ok) {
+        setErreur(d.erreur ?? 'Enregistrement impossible.')
+        return
+      }
+      setMessage(d.message ?? 'Configuration enregistrée.')
+      charger()
+    } catch {
+      setErreur('Le serveur ne répond pas.')
+    } finally {
+      setEnregistrement(false)
+    }
+  }
+
+  const champ =
+    'h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary/60 focus:ring-3 focus:ring-primary/15'
+
+  if (chargement && !donnees) {
+    return (
+      <p className="py-10 text-center text-sm text-muted-foreground">
+        Chargement de la configuration…
+      </p>
+    )
+  }
+  if (!donnees) return null
+
+  const etatNabooPay = ETATS_NABOOPAY[donnees.naboopay.etat] ?? ETATS_NABOOPAY.non_configure
+
+  return (
+    <div className="flex flex-col gap-4">
+      {message && (
+        <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2.5 text-xs text-success">
+          {message}
+        </p>
+      )}
+      {erreur && (
+        <p className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+          {erreur}
+        </p>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Numéros de réception (fallback manuel) */}
+        <Card>
+          <CardTitle
+            aside={<SmartphoneIcon className="size-4 text-muted-foreground" />}
+          >
+            Numéros de réception mobile money
+          </CardTitle>
+          <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
+            Affichés aux restaurateurs sur le flux de paiement manuel
+            (fallback). Laisse vide pour afficher « Numéro non configuré » —
+            aucun faux numéro ne sera jamais montré.
+          </p>
+          <div className="flex flex-col gap-3">
+            {Object.keys(numeros).map((mode) => (
+              <label key={mode} className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {mode}
+                </span>
+                <input
+                  value={numeros[mode] ?? ''}
+                  onChange={(e) =>
+                    setNumeros({ ...numeros, [mode]: e.target.value })
+                  }
+                  placeholder="+221 78 48 54 767"
+                  className={champ}
+                />
+              </label>
+            ))}
+          </div>
+        </Card>
+
+        {/* Paiement automatique */}
+        <Card className="border-primary/30">
+          <CardTitle
+            aside={<Badge ton={etatNabooPay.ton}>{etatNabooPay.libelle}</Badge>}
+          >
+            Paiement automatique — NabooPay
+          </CardTitle>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Quand c'est actif et configuré, les restaurateurs paient en ligne :
+            création de transaction, redirection vers le checkout, confirmation
+            instantanée par webhook et activation automatique de l'abonnement.
+            En cas de clé manquante ou d'erreur, le flux manuel prend le relais.
+          </p>
+
+          <div className="mt-4 flex flex-col gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                Clé API NabooPay{' '}
+                {donnees.naboopay.apiKeyConfiguree && (
+                  <span className="text-success">· configurée</span>
+                )}
+              </span>
+              <input
+                type="password"
+                value={naboopay.apiKey}
+                onChange={(e) =>
+                  setNaboopay({ ...naboopay, apiKey: e.target.value })
+                }
+                placeholder={
+                  donnees.naboopay.apiKeyConfiguree
+                    ? '••••••••••••'
+                    : 'Ex. nb_live_…'
+                }
+                autoComplete="off"
+                className={champ}
+              />
+              <span className="text-[10px] text-muted-foreground">
+                Laisse vide pour conserver la clé actuelle.
+              </span>
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                Secret de signature webhook{' '}
+                {donnees.naboopay.webhookSecretConfiguree && (
+                  <span className="text-success">· configuré</span>
+                )}
+              </span>
+              <input
+                type="password"
+                value={naboopay.webhookSecret}
+                onChange={(e) =>
+                  setNaboopay({ ...naboopay, webhookSecret: e.target.value })
+                }
+                placeholder={
+                  donnees.naboopay.webhookSecretConfiguree
+                    ? '••••••••••••'
+                    : 'whsec_…'
+                }
+                autoComplete="off"
+                className={champ}
+              />
+              <span className="text-[10px] text-muted-foreground">
+                Laisse vide pour conserver le secret actuel.
+              </span>
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                URL du webhook à enregistrer chez NabooPay
+              </span>
+              <input
+                readOnly
+                value={donnees.webhookUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                className={champ}
+              />
+              <span className="text-[10px] text-muted-foreground">
+                À coller dans le dashboard NabooPay une fois le site en ligne —
+                l'URL locale (localhost) n'est pas joignable depuis Internet.
+              </span>
+            </label>
+
+            <div className="flex items-center justify-between rounded-lg bg-secondary/50 px-3 py-2.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                Proposer le paiement automatique aux restaurateurs
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={naboopay.actif}
+                onClick={() =>
+                  setNaboopay({ ...naboopay, actif: !naboopay.actif })
+                }
+                className={`relative h-6 w-11 rounded-full transition-colors ${
+                  naboopay.actif ? 'bg-success' : 'bg-secondary'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 size-5 rounded-full bg-card shadow transition-transform ${
+                    naboopay.actif
+                      ? 'translate-x-[22px]'
+                      : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
+
+            <p className="rounded-lg border border-warning/25 bg-warning/10 px-3 py-2.5 text-[11px] leading-relaxed text-warning">
+              Les clés sont stockées côté serveur et jamais réaffichées :
+              après enregistrement, seul l'état « configurée » est visible.
+              <br />
+              {donnees.naboopay.mock
+                ? 'Mode simulation actif (NABOOPAY_MOCK) : aucune clé réelle requise pour tester le flux.'
+                : 'Pour tester sans clé réelle : lance le serveur avec NABOOPAY_MOCK=mock.'}
+            </p>
+          </div>
+        </Card>
+      </div>
+
+      {/* Fournisseurs — structure extensible */}
+      <Card>
+        <CardTitle
+          aside={<CreditCardIcon className="size-4 text-muted-foreground" />}
+        >
+          Fournisseurs de paiement
+        </CardTitle>
+        <ul className="flex flex-col divide-y divide-border">
+          {donnees.fournisseurs.map((f) => {
+            const etat =
+              ETATS_NABOOPAY[f.etat] ?? ETATS_NABOOPAY.non_configure
+            return (
+              <li
+                key={f.code}
+                className="flex items-center gap-3 py-3"
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-primary">
+                  <WalletIcon className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{f.nom}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {f.etat === 'bientot'
+                      ? 'Intégrable plus tard via la même structure — sans refonte.'
+                      : 'Configuration au-dessus'}
+                  </p>
+                </div>
+                <Badge ton={etat.ton}>{etat.libelle}</Badge>
+              </li>
+            )
+          })}
+        </ul>
+      </Card>
+
+      <button
+        type="button"
+        disabled={enregistrement}
+        onClick={enregistrer}
+        className="flex items-center gap-2 self-start rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-transform duration-300 ease-[var(--ease-spring)] hover:scale-[1.03] disabled:opacity-50"
+      >
+        {enregistrement ? (
+          <LoaderIcon className="size-4 animate-spin" />
+        ) : (
+          <SaveIcon className="size-4" />
+        )}
+        Enregistrer les moyens de paiement
+      </button>
+    </div>
   )
 }

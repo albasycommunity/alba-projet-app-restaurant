@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Role, joursRestants } from '@/lib/auth'
-import { abonnementDeRestaurant, lireBdd } from '@/lib/server/bdd'
+import { Role, joursRestants, MODES_MOBILE_MONEY } from '@/lib/auth'
+import {
+  abonnementDeRestaurant,
+  lireBdd,
+  lireParametresPaiement,
+} from '@/lib/server/bdd'
 import { exigerRole } from '@/lib/server/auth'
+import {
+  NABOOPAY_MOCK,
+  paiementAutomatiqueDisponible,
+} from '@/lib/server/naboopay'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,9 +31,21 @@ export async function GET(req: NextRequest) {
   )
   const abonnement = await abonnementDeRestaurant(utilisateur.restaurantId)
 
+  // Numéros de réception configurés par le super admin — jamais en dur.
+  // Le paiement automatique n'est exposé que s'il est réellement prêt.
+  const parametres = await lireParametresPaiement()
+  const paiement = {
+    naboopayActif: paiementAutomatiqueDisponible(parametres),
+    naboopayMock: NABOOPAY_MOCK,
+    modes: MODES_MOBILE_MONEY.map((mode) => ({
+      mode,
+      numero: parametres.numerosMobileMoney[mode],
+    })),
+  }
+
   if (!abonnement) {
     return NextResponse.json(
-      { abonnement: null, restaurant },
+      { abonnement: null, restaurant, paiement },
     )
   }
 
@@ -43,5 +63,6 @@ export async function GET(req: NextRequest) {
       .filter((p) => p.abonnementId === abonnement.id)
       .slice(0, 12),
     restaurant,
+    paiement,
   })
 }

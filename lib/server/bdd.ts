@@ -20,18 +20,26 @@ import {
   dateIso,
   estAbonnementAccessible,
   nouveauId,
+  parametresPaiementParDefaut,
   type Abonnement,
   type CommandeClient,
   type FideliteClient,
   type ModePaiementAbonnement,
+  type NumerosMobileMoney,
   type Paiement,
+  type ParametresPaiement,
   type PlanAbonnement,
   type Restaurant,
   type StatutAbonnement,
+  type TransactionPaiement,
   type Utilisateur,
+  type WebhookJournal,
 } from '@/lib/auth'
 
 const FICHIER = path.join(process.cwd(), 'data', 'alba-bdd.json')
+
+/** Version du format de données. Bumpée à chaque migration de schéma. */
+const VERSION_BDD = 3
 
 export type Bdd = {
   version: number
@@ -42,6 +50,12 @@ export type Bdd = {
   fidelite: FideliteClient[]
   commandesClients: CommandeClient[]
   compteurCommandes: number
+  /** Configuration paiement (numéros + fournisseurs). Clés côté serveur. */
+  parametresPaiement: ParametresPaiement
+  /** Transactions agrégateur en attente de confirmation webhook. */
+  transactionsPaiement: TransactionPaiement[]
+  /** Journal des webhooks reçus, même rejetés. */
+  webhooksPaiement: WebhookJournal[]
 }
 
 /* ------------------------- comptes de démonstration ------------------------- */
@@ -181,7 +195,7 @@ function bddInitiale(): Bdd {
     })
 
   return {
-    version: 1,
+    version: VERSION_BDD,
     restaurants,
     utilisateurs,
     abonnements,
@@ -189,6 +203,9 @@ function bddInitiale(): Bdd {
     fidelite,
     commandesClients: [],
     compteurCommandes: 400,
+    parametresPaiement: parametresPaiementParDefaut(),
+    transactionsPaiement: [],
+    webhooksPaiement: [],
   }
 }
 
@@ -196,17 +213,61 @@ function bddInitiale(): Bdd {
  * Pas de cache en mémoire : le proxy (Next 16) est bundlé séparément des
  * routes API — un cache partagé serait incohérent. Le fichier est petit
  * (quelques Ko) et le disque local est rapide : chaque lecture est fraîche.
+ *
+ * RÈGLE D'OR : une lecture n'écrit JAMAIS sur le disque à chaque appel.
+ * Écrire dans data/ (projet surveillé par le serveur de dev) à chaque
+ * requête provoquerait une réaction en chaîne (écriture → rebuild →
+ * refresh du navigateur → nouvelle requête → réécriture…). Le disque
+ * n'est touché QUE lorsque les données ont réellement changé :
+ *   - migration de schéma (une seule écriture, puis plus rien) ;
+ *   - ou (re)création du fichier, au maximum UNE fois par démarrage
+ *     (garde en mémoire partagée), uniquement s'il est absent ou illisible.
  */
-export async function lireBdd(): Promise<Bdd> {
-  try {
-    const brut = await readFile(FICHIER, 'utf-8')
-    const bdd = JSON.parse(brut) as Bdd
-    return normaliserBdd(bdd)
-  } catch {
-    const initiale = bddInitiale()
-    await sauverBdd(initiale)
-    return initiale
+let fichierReinitialiseCeProcessus = false
+
+async function seedMemoire(): Promise<Bdd> {
+  const initiale = bddInitiale()
+  if (!fichierReinitialiseCeProcessus) {
+    // Une seule tentative par processus, quel que soit le résultat :
+    // jamais d'écriture répétée à chaque requête.
+    fichierReinitialiseCeProcessus = true
+    await sauverBdd(initiale).catch(() => {
+      // Échec (permissions, verrou…) : on continue en mémoire.
+    })
   }
+  return initiale
+}
+
+export async function lireBdd(): Promise<Bdd> {
+  let brut: string
+  try {
+    brut = await readFile(FICHIER, 'utf-8')
+  } catch {
+    // Fichier absent ou illisible : seed en mémoire, recréé UNE fois.
+    return seedMemoire()
+  }
+  let bdd: Partial<Bdd>
+  try {
+    bdd = JSON.parse(brut) as Partial<Bdd>
+  } catch {
+    // JSON corrompu : on ne détruit jamais les données, seed en mémoire.
+    return seedMemoire()
+  }
+  if (
+    !Array.isArray(bdd.utilisateurs) ||
+    !Array.isArray(bdd.restaurants)
+  ) {
+    // Fichier inutilisable (ex. `{}` ou tronqué) : seed en mémoire.
+    return seedMemoire()
+  }
+  const normalisee = normaliserBdd(bdd as Bdd)
+  if (normalisee !== bdd) {
+    // Migration de schéma détectée : une SEULE écriture, pas à chaque lecture.
+    await sauverBdd(normalisee).catch(() => {
+      // Échec d'écriture : la normalisation reste valable en mémoire.
+    })
+  }
+  return normalisee
 }
 
 /**
@@ -218,16 +279,44 @@ export async function lireBdd(): Promise<Bdd> {
  *   - actif absent      → true  (un compte n'est jamais désactivé par défaut)
  *   - permissions absent → []   (un STAFF sans champ reçoit zéro permission,
  *                                jamais un accès accordé par défaut)
+ *
+ * Immutabilité : si rien ne doit changer, la même référence est renvoyée
+ * (aucune écriture). Une migration produit un NOUVEL objet — c'est elle
+ * que lireBdd() persiste, une seule fois.
  */
 function normaliserBdd(bdd: Bdd): Bdd {
-  bdd.version = 2
-  bdd.utilisateurs = bdd.utilisateurs.map((u) => ({
+  if (bdd.version === VERSION_BDD) return bdd
+
+  const utilisateurs = bdd.utilisateurs.map((u) => ({
     ...u,
     actif: u.actif !== undefined ? u.actif : true,
     permissions: Array.isArray(u.permissions) ? u.permissions : [],
     role: u.role ?? Role.CLIENT,
   }))
-  return bdd
+  const parametresPaiement: ParametresPaiement = {
+    ...parametresPaiementParDefaut(),
+    ...(bdd.parametresPaiement ?? {}),
+    numerosMobileMoney: {
+      ...parametresPaiementParDefaut().numerosMobileMoney,
+      ...(bdd.parametresPaiement?.numerosMobileMoney ?? {}),
+    },
+    naboopay: {
+      ...parametresPaiementParDefaut().naboopay,
+      ...(bdd.parametresPaiement?.naboopay ?? {}),
+    },
+  }
+  return {
+    ...bdd,
+    version: VERSION_BDD,
+    utilisateurs,
+    parametresPaiement,
+    transactionsPaiement: Array.isArray(bdd.transactionsPaiement)
+      ? bdd.transactionsPaiement
+      : [],
+    webhooksPaiement: Array.isArray(bdd.webhooksPaiement)
+      ? bdd.webhooksPaiement
+      : [],
+  }
 }
 
 export async function sauverBdd(bdd: Bdd) {
@@ -500,6 +589,189 @@ export async function activerAbonnement(abonnement: Abonnement) {
     cible.statut = 'actif'
     cible.dateDebut = dateIso(new Date())
     cible.dateFin = dateDans(jours)
+  })
+}
+
+/* ------------------------- paiement automatique ------------------------- */
+
+export async function lireParametresPaiement(): Promise<ParametresPaiement> {
+  const bdd = await lireBdd()
+  return bdd.parametresPaiement
+}
+
+/**
+ * Sauvegarde de la configuration paiement. Les clés sont stockées en dur
+ * côté serveur ; un champ vide signale « garder la valeur actuelle » —
+ * l'UI n'envoie jamais une clé reçue du serveur (elle n'en reçoit jamais).
+ */
+export async function sauverParametresPaiement(miseAJour: {
+  numerosMobileMoney?: Partial<NumerosMobileMoney>
+  naboopay?: { actif?: boolean; apiKey?: string; webhookSecret?: string }
+}) {
+  await muterBdd((bdd) => {
+    if (miseAJour.numerosMobileMoney) {
+      for (const [mode, numero] of Object.entries(
+        miseAJour.numerosMobileMoney,
+      ) as [keyof NumerosMobileMoney, string][]) {
+        if (typeof numero === 'string') {
+          bdd.parametresPaiement.numerosMobileMoney[mode] = numero.trim()
+        }
+      }
+    }
+    if (miseAJour.naboopay) {
+      const n = miseAJour.naboopay
+      if (n.actif !== undefined) {
+        bdd.parametresPaiement.naboopay.actif = n.actif
+      }
+      if (typeof n.apiKey === 'string' && n.apiKey.trim()) {
+        bdd.parametresPaiement.naboopay.apiKey = n.apiKey.trim()
+      }
+      if (typeof n.webhookSecret === 'string' && n.webhookSecret.trim()) {
+        bdd.parametresPaiement.naboopay.webhookSecret = n.webhookSecret.trim()
+      }
+    }
+  })
+}
+
+/** Enregistre une transaction agrégateur en attente de confirmation. */
+export async function enregistrerTransactionPaiement(input: {
+  orderId: string
+  abonnement: Abonnement
+  restaurantId: string
+  plan: PlanAbonnement
+  montant: number
+}) {
+  await muterBdd((bdd) => {
+    bdd.transactionsPaiement.unshift({
+      id: nouveauId('tx'),
+      fournisseur: 'naboopay',
+      orderId: input.orderId,
+      abonnementId: input.abonnement.id,
+      restaurantId: input.restaurantId,
+      plan: input.plan,
+      montant: input.montant,
+      statut: 'pending',
+      creeLe: dateIso(new Date()),
+    })
+  })
+}
+
+export async function trouverTransactionPaiementParOrderId(orderId: string) {
+  const bdd = await lireBdd()
+  return (
+    bdd.transactionsPaiement.find((t) => t.orderId === orderId) ?? null
+  )
+}
+
+/**
+ * Démarre un renouvellement automatique : l'abonnement passe en attente
+ * dès la création de la transaction (comme le flux manuel), sans rien
+ * encaisser — la confirmation vient du webhook.
+ */
+export async function demarrerRenouvellementAutomatique(input: {
+  abonnement: Abonnement
+  plan: PlanAbonnement
+  montant: number
+}) {
+  await muterBdd((bdd) => {
+    const cible = bdd.abonnements.find((a) => a.id === input.abonnement.id)
+    if (cible) {
+      cible.plan = input.plan
+      cible.montant = input.montant
+      cible.statut = 'en_attente'
+    }
+  })
+}
+
+const LIBELLE_METHODE_NABOOPAY: Record<string, ModePaiementAbonnement> = {
+  wave: 'Wave',
+  orange_money: 'Orange Money',
+  free_money: 'Free Money',
+}
+
+/**
+ * Confirmation webhook (signature vérifiée) : active l'abonnement,
+ * marque la transaction payée et enregistre le paiement dans l'historique
+ * du super admin — le tout en une seule mutation.
+ */
+export async function confirmerRenouvellementAutomatique(input: {
+  transaction: TransactionPaiement
+  methode?: string
+  frais?: number
+}) {
+  await muterBdd((bdd) => {
+    const tx = bdd.transactionsPaiement.find(
+      (t) => t.id === input.transaction.id,
+    )
+    if (tx && tx.statut === 'pending') {
+      tx.statut = 'paid'
+      tx.payeLe = dateIso(new Date())
+      tx.methode = input.methode
+      tx.frais = input.frais
+    }
+    const abonnement = bdd.abonnements.find(
+      (a) => a.id === input.transaction.abonnementId,
+    )
+    if (abonnement) {
+      const jours = abonnement.plan === 'annuel' ? 365 : 30
+      abonnement.statut = 'actif'
+      abonnement.dateDebut = dateIso(new Date())
+      abonnement.dateFin = dateDans(jours)
+    }
+    const restaurant = bdd.restaurants.find(
+      (r) => r.id === input.transaction.restaurantId,
+    )
+    bdd.paiements.unshift({
+      id: nouveauId('p'),
+      abonnementId: input.transaction.abonnementId,
+      restaurantId: input.transaction.restaurantId,
+      restaurantNom: restaurant?.nom ?? 'Restaurant',
+      montant: input.transaction.montant,
+      mode:
+        LIBELLE_METHODE_NABOOPAY[input.methode ?? ''] ??
+        ('Wave' as ModePaiementAbonnement),
+      motif: 'Renouvellement automatique (NabooPay)',
+      date: dateIso(new Date()),
+    })
+  })
+}
+
+/** Annulation/remboursement notifié par webhook : la transaction et l'abonnement redeviennent expirés. */
+export async function annulerRenouvellementAutomatique(transaction: TransactionPaiement) {
+  await muterBdd((bdd) => {
+    const tx = bdd.transactionsPaiement.find((t) => t.id === transaction.id)
+    if (tx && tx.statut === 'pending') tx.statut = 'cancelled'
+    const abonnement = bdd.abonnements.find(
+      (a) => a.id === transaction.abonnementId,
+    )
+    if (abonnement && abonnement.statut === 'en_attente') {
+      abonnement.statut = 'expire'
+    }
+  })
+}
+
+/** Journal des webhooks — garde les 100 derniers reçus (même rejetés). */
+export async function journaliserWebhook(entree: {
+  signatureValide: boolean
+  statut: WebhookJournal['statut']
+  ordreId?: string
+  detail?: string
+  corps: string
+}) {
+  await muterBdd((bdd) => {
+    bdd.webhooksPaiement.unshift({
+      id: nouveauId('w'),
+      fournisseur: 'naboopay',
+      recuLe: dateIso(new Date()),
+      signatureValide: entree.signatureValide,
+      statut: entree.statut,
+      ordreId: entree.ordreId,
+      detail: entree.detail,
+      corps: entree.corps.slice(0, 2000),
+    })
+    if (bdd.webhooksPaiement.length > 100) {
+      bdd.webhooksPaiement.length = 100
+    }
   })
 }
 

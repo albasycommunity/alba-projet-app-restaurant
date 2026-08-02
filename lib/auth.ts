@@ -212,14 +212,90 @@ export type ModePaiementAbonnement =
   | 'Free Money'
   | 'Espèces'
 
+/** Modes qui se règlent sur un numéro mobile money (Espèces exclu). */
+export const MODES_MOBILE_MONEY = [
+  'Wave',
+  'Orange Money',
+  'Free Money',
+] as const
+
+/**
+ * Modes proposés pour un abonnement. Les numéros de réception ne vivent
+ * PLUS ici : ils sont configurés par le SUPER_ADMIN dans le panel
+ * « Moyens de paiement » et servis par les routes API (fallback manuel).
+ */
 export const MODES_PAIEMENT_ABONNEMENT: {
   mode: ModePaiementAbonnement
-  numero: string
-}[] = [
-  { mode: 'Wave', numero: '+221 77 123 45 67' },
-  { mode: 'Orange Money', numero: '+221 78 123 45 67' },
-  { mode: 'Free Money', numero: '+221 76 123 45 67' },
-]
+}[] = MODES_MOBILE_MONEY.map((mode) => ({ mode }))
+
+/** Numéro réel de la plateforme — sert de défaut au panel de configuration. */
+export const NUMERO_PAIEMENT_PAR_DEFAUT = '+221 78 48 54 767'
+
+export type NumerosMobileMoney = Record<
+  (typeof MODES_MOBILE_MONEY)[number],
+  string
+>
+
+/**
+ * Paramètres de paiement, stockés côté serveur uniquement (BDD locale).
+ * Les clés API et secrets ne sont JAMAIS renvoyés au client : les routes
+ * ne répondent que par « configuré ou non ». Seul le SUPER_ADMIN peut
+ * lire/modifier cette section (vérifié sur chaque route API).
+ */
+export type ParametresPaiement = {
+  numerosMobileMoney: NumerosMobileMoney
+  naboopay: {
+    /** Le paiement automatique est proposé aux restaurateurs. */
+    actif: boolean
+    /** Clé API NabooPay — valeur réelle jamais renvoyée au client. */
+    apiKey: string
+    /** Secret de signature des webhooks — idem, jamais renvoyé. */
+    webhookSecret: string
+  }
+}
+
+export function parametresPaiementParDefaut(): ParametresPaiement {
+  return {
+    numerosMobileMoney: {
+      Wave: NUMERO_PAIEMENT_PAR_DEFAUT,
+      'Orange Money': NUMERO_PAIEMENT_PAR_DEFAUT,
+      'Free Money': NUMERO_PAIEMENT_PAR_DEFAUT,
+    },
+    naboopay: { actif: false, apiKey: '', webhookSecret: '' },
+  }
+}
+
+/**
+ * Transaction d'abonnement côté agrégateur : fait le lien entre un
+ * `order_id` NabooPay et l'abonnement à activer quand le webhook arrive.
+ */
+export type TransactionPaiement = {
+  id: string
+  fournisseur: 'naboopay'
+  /** Référence renvoyée par NabooPay (POST /api/v2/transactions). */
+  orderId: string
+  abonnementId: string
+  restaurantId: string
+  plan: PlanAbonnement
+  montant: number
+  statut: 'pending' | 'paid' | 'cancelled' | 'refunded' | 'failed'
+  creeLe: string
+  payeLe?: string
+  methode?: string
+  frais?: number
+}
+
+/** Journal des webhooks reçus (même rejetés) — pour le debug futur. */
+export type WebhookJournal = {
+  id: string
+  fournisseur: 'naboopay'
+  recuLe: string
+  signatureValide: boolean
+  statut: 'rejete' | 'traite' | 'ignore'
+  ordreId?: string
+  detail?: string
+  corps: string
+}
 
 export type Restaurant = {
   id: string
