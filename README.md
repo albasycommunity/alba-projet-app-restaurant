@@ -1,10 +1,11 @@
 # alba — gestion de restaurant (système d'authentification et de rôles)
 
-App Next.js 16 (App Router, offline-first) étendue avec un système à **3 rôles** :
+App Next.js 16 (App Router, offline-first) étendue avec un système à **4 rôles** :
 
 1. **Super admin** (`/super-admin`) — vue globale de la plateforme, gestion des abonnements et des comptes.
 2. **Admin restaurant** (`/back-office`, `/pilotage`, `/caisse`, …) — back-office de son établissement, accessible **uniquement si son abonnement est actif**.
-3. **Client** (`/`) — menu, commande en ligne, Carte de Fidélité (pas d'abonnement).
+3. **Personnel (STAFF)** — accès limité aux onglets couverts par ses permissions (`caisse`, `cuisine`, `stock`, `hygiene`, `equipe`, `clients`, `pilotage`), géré depuis `/back-office` → « Gestion du personnel ». Un membre sans permission est redirigé vers `/acces-refuse`.
+4. **Client** (`/`) — menu, commande en ligne, Carte de Fidélité (pas d'abonnement).
 
 ## Démarrage
 
@@ -27,6 +28,8 @@ premier lancement — remplaçable par une vraie base (les fonctions de
 | --------------- | ------------------------ | --------------- | ------------------------ |
 | Super admin     | `superadmin@alba.sn`     | `SuperAlba2026!` | `/super-admin`          |
 | Admin restaurant | `chef@chezfatou.sn`     | `Fatou2026!`    | `/back-office` (abo actif, expire dans ~17 j) |
+| Personnel (STAFF) | `caissiere@chezfatou.sn` | `Caissiere2026!` | `/caisse`, `/clients`  |
+| Personnel (STAFF) | `cuisinier@chezfatou.sn` | `Cuisinier2026!` | `/cuisine`            |
 | Admin restaurant | `gora@baobabbleu.sn`    | `Gora2026!`     | redirigé vers `/abonnement/renouveler` (abonnement expiré — scénario de démo) |
 | Admin restaurant | `adama@teranga.sn`      | `Adama2026!`    | `/back-office` (abo annuel actif) |
 | Client          | `client@demo.sn`         | `Client2026!`   | `/` (menu + fidélité)    |
@@ -37,6 +40,7 @@ premier lancement — remplaçable par une vraie base (les fonctions de
 
 - `SUPER_ADMIN` → `/super-admin`
 - `RESTAURANT_ADMIN` → `/back-office` (ou `/abonnement/renouveler` si abonnement non actif)
+- `STAFF` → sa première zone autorisée (ou `/acces-refuse` si aucune permission)
 - `CLIENT` → `/`
 
 ## Architecture
@@ -52,19 +56,25 @@ components/menu-store.tsx         → menu éditable (back-office ↔ carte clie
 app/(espace-restaurant)/          → back-office : pilotage, caisse, cuisine, stock,
                                     hygiène, équipe, clients, abonnement
 app/                              → accueil client (/) — menu, panier, fidélité
-app/login, app/register           → connexion / inscription client
-app/super-admin/                  → plateforme : vue d'ensemble, restaurants,
-                                    abonnements, comptes
-app/api/                          → routes protégées (rôle + abonnement revalidés)
+app/login, app/register   → connexion / inscription client
+app/acces-refuse/         → page « Accès non autorisé » (STAFF sans permission)
+app/super-admin/          → plateforme : vue d'ensemble, restaurants,
+                            abonnements, comptes
+app/api/back-office/personnel → gestion du personnel (STAFF) — admin uniquement
+app/api/                          → routes protégées (rôle + abonnement + permissions revalidés)
 ```
 
 ### Sécurité
 
 - Mots de passe **bcrypt** (jamais en clair, `password_hash` uniquement).
 - Session **JWT signé (HS256)** dans un cookie **httpOnly** (24 h).
-- `proxy.ts` **et** chaque route API revalident le rôle et le statut
-  d'abonnement depuis le store : un `CLIENT` ne peut pas appeler une route de
-  gestion du menu, un abonnement suspendu coupe le back-office immédiatement.
+- `proxy.ts` **et** chaque route API revalident le rôle, le statut
+  d'abonnement **et les permissions** depuis le store : un `CLIENT` ne peut
+  pas appeler une route de gestion du menu, un STAFF n'atteint que ses zones
+  autorisées, un abonnement suspendu coupe le back-office immédiatement.
+- Anti-escalade : `role` et `permissions` sont toujours déterminés côté
+  serveur, jamais à partir des champs envoyés par le client ; l'email reste
+  unique sur tous les rôles.
 - Tous les secrets passent par les variables d'environnement (`.env.local`).
 
 ### Flux d'abonnement

@@ -18,6 +18,7 @@ import { Badge, Card, CardTitle, EmptyState, PageHeader, Sheet, StatTile } from 
 import { useAlba } from '@/lib/store'
 import { useAuth } from '@/lib/auth-contexte'
 import { useMenu } from '@/components/menu-store'
+import { GestionPersonnel } from '@/components/personnel/gestion-personnel'
 import { CATEGORIES, fcfa, type Categorie } from '@/lib/data'
 
 const OUTILS = [
@@ -32,7 +33,7 @@ const OUTILS = [
 type AbonnementInfo = {
   abonnement: {
     plan: 'mensuel' | 'annuel'
-    statut: 'actif' | 'expire' | 'en_attente'
+    statut: 'actif' | 'essai' | 'expire' | 'en_attente'
     dateFin: string
     montant: number
     joursRestants: number
@@ -159,8 +160,7 @@ export default function PageBackOffice() {
             }
           >
             Gestion du menu
-          </CardTitle>
-          {plats.length === 0 ? (
+          </CardTitle>          {plats.length === 0 ? (
             <EmptyState
               titre="Le menu est vide"
               texte="Ajoute ton premier plat avec le bouton « Nouveau plat »."
@@ -243,6 +243,9 @@ export default function PageBackOffice() {
             </Link>
           ))}
         </div>
+
+        {/* Personnel : comptes STAFF, permissions, désactivation */}
+        <GestionPersonnel />
       </div>
 
       {/* Formulaire nouveau plat */}

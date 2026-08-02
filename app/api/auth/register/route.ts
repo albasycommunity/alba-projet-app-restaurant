@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
     role: Role.CLIENT,
     restaurantId: null,
     actif: true,
+    permissions: [],
     creeLe: dateIso(new Date()),
   }
 

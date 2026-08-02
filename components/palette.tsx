@@ -15,6 +15,8 @@ import {
   UsersIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/auth-contexte'
+import { Permission, Role } from '@/lib/auth'
 
 type Commande = {
   href: string
@@ -22,6 +24,8 @@ type Commande = {
   detail: string
   icon: typeof ChartPieIcon
   motsCles: string
+  /** permission requise pour un STAFF ; absent = réservé à la gérante */
+  permission?: Permission
 }
 
 const ACTIONS: Commande[] = [
@@ -31,6 +35,7 @@ const ACTIONS: Commande[] = [
     detail: 'Caisse — cash, Wave, Orange Money',
     icon: ScanBarcodeIcon,
     motsCles: 'caisse pos payer vendre ticket wave orange money espèces',
+    permission: Permission.CAISSE,
   },
   {
     href: '/cuisine',
@@ -38,6 +43,7 @@ const ACTIONS: Commande[] = [
     detail: 'Commandes en cours et plats prêts',
     icon: FlameIcon,
     motsCles: 'cuisine commandes prêt préparation service',
+    permission: Permission.CUISINE,
   },
   {
     href: '/stock',
@@ -45,6 +51,7 @@ const ACTIONS: Commande[] = [
     detail: 'Ruptures, péremptions, food cost',
     icon: PackageIcon,
     motsCles: 'stock inventaire rupture péremption dlc food cost réappro',
+    permission: Permission.STOCK,
   },
   {
     href: '/hygiene',
@@ -52,6 +59,7 @@ const ACTIONS: Commande[] = [
     detail: 'Check-lists et preuve photo',
     icon: ClipboardCheckIcon,
     motsCles: 'hygiène haccp température nettoyage contrôle sanitaire',
+    permission: Permission.HYGIENE,
   },
   {
     href: '/equipe',
@@ -59,6 +67,7 @@ const ACTIONS: Commande[] = [
     detail: 'Pointage, planning, formation',
     icon: UsersIcon,
     motsCles: 'équipe personnel pointage planning formation employé',
+    permission: Permission.EQUIPE,
   },
   {
     href: '/clients',
@@ -66,6 +75,7 @@ const ACTIONS: Commande[] = [
     detail: 'Points, menu à partager',
     icon: HeartIcon,
     motsCles: 'clients fidélité points menu whatsapp partage anniversaire',
+    permission: Permission.CLIENTS,
   },
   {
     href: '/pilotage',
@@ -73,6 +83,7 @@ const ACTIONS: Commande[] = [
     detail: 'Chiffre d’affaires, marges, affluence',
     icon: ChartPieIcon,
     motsCles: 'pilotage dashboard chiffre affaires ca rapport marge',
+    permission: Permission.PILOTAGE,
   },
   {
     href: '/abonnement',
@@ -106,17 +117,30 @@ export function Palette({
   const [requete, setRequete] = useState('')
   const [index, setIndex] = useState(0)
   const champ = useRef<HTMLInputElement>(null)
+  const { utilisateur } = useAuth()
+
+  // Un STAFF ne voit que ses zones ; la gérante voit tout.
+  const actions = useMemo(() => {
+    if (utilisateur?.role === Role.RESTAURANT_ADMIN) return ACTIONS
+    if (utilisateur?.role === Role.STAFF) {
+      const permissions = utilisateur.permissions ?? []
+      return ACTIONS.filter(
+        (a) => a.permission && permissions.includes(a.permission),
+      )
+    }
+    return []
+  }, [utilisateur])
 
   const resultats = useMemo(() => {
     const q = requete.trim().toLowerCase()
-    if (!q) return ACTIONS
-    return ACTIONS.filter(
+    if (!q) return actions
+    return actions.filter(
       (a) =>
         a.titre.toLowerCase().includes(q) ||
         a.detail.toLowerCase().includes(q) ||
         a.motsCles.includes(q),
     )
-  }, [requete])
+  }, [requete, actions])
 
   useEffect(() => {
     if (ouvert) {

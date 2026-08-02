@@ -14,6 +14,7 @@ import {
   WifiOffIcon,
 } from 'lucide-react'
 import { LogoComplet, LogoMark, ArcheMotif } from '@/components/landing/logo'
+import { useAuth } from '@/lib/auth-contexte'
 
 const CHAMP =
   'h-12 w-full rounded-xl border border-border bg-secondary/35 px-3.5 text-sm text-foreground outline-none transition-all duration-300 placeholder:text-muted-foreground/50 focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10'
@@ -122,6 +123,7 @@ function PageConnexion() {
   const params = useSearchParams()
   const suivant = params.get('suivant')
   const inscrit = params.get('inscrit') === '1'
+  const { actualiser } = useAuth()
 
   const [email, setEmail] = useState('')
   const [motDePasse, setMotDePasse] = useState('')
@@ -144,6 +146,10 @@ function PageConnexion() {
         setErreur(donnees.erreur ?? 'Connexion impossible.')
         return
       }
+      // Re-synchronise l'état d'authentification avec le serveur AVANT de
+      // naviguer : sans cela, le contexte conserve l'ancien utilisateur et
+      // toute l'UI reste figée sur le compte précédent (bug de session).
+      await actualiser()
       router.push(donnees.destination)
       router.refresh()
     } catch {
@@ -277,6 +283,7 @@ function PageConnexion() {
               {[
                 ['superadmin@alba.sn', 'SuperAlba2026!', 'primaire'],
                 ['chef@chezfatou.sn', 'Fatou2026!', 'succes'],
+                ['caissiere@chezfatou.sn', 'Caissiere2026!', 'succes'],
                 ['client@demo.sn', 'Client2026!', 'attention'],
               ].map(([mail, passe, ton]) => (
                 <li

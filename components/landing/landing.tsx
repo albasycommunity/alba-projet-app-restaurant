@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { LayoutGridIcon, MenuIcon, XIcon } from 'lucide-react'
-import { ACCUEIL_PAR_ROLE } from '@/lib/auth'
+import { LayoutGridIcon, LogOutIcon, MenuIcon, XIcon } from 'lucide-react'
+import { destinationPour } from '@/lib/auth'
 import { useAuth } from '@/lib/auth-contexte'
 import { LogoComplet } from './logo'
 import { Hero, BandeServices } from './hero'
@@ -21,7 +21,7 @@ const LIENS = [
 ]
 
 function Navigation() {
-  const { utilisateur } = useAuth()
+  const { utilisateur, deconnecter } = useAuth()
   const [mobile, setMobile] = useState(false)
 
   useEffect(() => {
@@ -55,13 +55,24 @@ function Navigation() {
 
           <div className="ml-auto hidden items-center gap-2 md:flex">
             {utilisateur ? (
-              <Link
-                href={ACCUEIL_PAR_ROLE[utilisateur.role]}
-                className="flex h-10 items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 text-sm font-medium text-primary transition-all duration-300 ease-[var(--ease-spring)] hover:bg-primary/18"
-              >
-                <LayoutGridIcon className="size-4" />
-                Ouvrir mon espace
-              </Link>
+              <>
+                <Link
+                  href={destinationPour(utilisateur.role, utilisateur.permissions)}
+                  className="flex h-10 items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 text-sm font-medium text-primary transition-all duration-300 ease-[var(--ease-spring)] hover:bg-primary/18"
+                >
+                  <LayoutGridIcon className="size-4" />
+                  Ouvrir mon espace
+                </Link>
+                <button
+                  type="button"
+                  onClick={deconnecter}
+                  className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground"
+                  aria-label="Se déconnecter"
+                  title="Se déconnecter"
+                >
+                  <LogOutIcon className="size-4" />
+                </button>
+              </>
             ) : (
               <>
                 <Link
@@ -104,14 +115,27 @@ function Navigation() {
             ))}
             <div className="mt-2 flex flex-col gap-2 border-t border-border pt-3">
               {utilisateur ? (
-                <Link
-                  href={ACCUEIL_PAR_ROLE[utilisateur.role]}
-                  onClick={() => setMobile(false)}
-                  className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary font-medium text-primary-foreground"
-                >
-                  <LayoutGridIcon className="size-4" />
-                  Ouvrir mon espace
-                </Link>
+                <>
+                  <Link
+                    href={destinationPour(utilisateur.role, utilisateur.permissions)}
+                    onClick={() => setMobile(false)}
+                    className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary font-medium text-primary-foreground"
+                  >
+                    <LayoutGridIcon className="size-4" />
+                    Ouvrir mon espace
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobile(false)
+                      deconnecter()
+                    }}
+                    className="flex h-11 items-center justify-center gap-2 rounded-xl border border-border bg-secondary/50 font-medium text-muted-foreground"
+                  >
+                    <LogOutIcon className="size-4" />
+                    Se déconnecter
+                  </button>
+                </>
               ) : (
                 <>
                   <Link

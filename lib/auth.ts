@@ -6,20 +6,111 @@
 export enum Role {
   SUPER_ADMIN = 'SUPER_ADMIN',
   RESTAURANT_ADMIN = 'RESTAURANT_ADMIN',
+  STAFF = 'STAFF',
   CLIENT = 'CLIENT',
+}
+
+/**
+ * Zones métier du back-office. Un compte STAFF n'a accès qu'aux zones
+ * cochées par sa gérante — jamais aux autres, jamais à la facturation.
+ *
+ * Matrice permission → zone (source de vérité, utilisée par proxy.ts,
+ * exigerPermission, la navigation et l'interface de gestion du personnel) :
+ *
+ * | Permission | Zone         | Onglet            |
+ * |------------|--------------|-------------------|
+ * | CAISSE     | /caisse      | Caisse            |
+ * | CUISINE    | /cuisine     | Cuisine           |
+ * | STOCK      | /stock       | Stock             |
+ * | HYGIENE    | /hygiene     | Hygiène           |
+ * | EQUIPE     | /equipe      | Équipe            |
+ * | CLIENTS    | /clients     | Clients           |
+ * | PILOTAGE   | /pilotage    | Pilotage          |
+ *
+ * Les zones d'administration (/back-office) et de facturation (/abonnement)
+ * n'ont AUCUNE permission associée : elles sont réservées au
+ * RESTAURANT_ADMIN, qui voit tout par construction.
+ */
+export enum Permission {
+  CAISSE = 'caisse',
+  CUISINE = 'cuisine',
+  STOCK = 'stock',
+  HYGIENE = 'hygiene',
+  EQUIPE = 'equipe',
+  CLIENTS = 'clients',
+  PILOTAGE = 'pilotage',
 }
 
 /** Libellés français, pour l'affichage. */
 export const LIBELLES_ROLE: Record<Role, string> = {
   [Role.SUPER_ADMIN]: 'Super admin',
   [Role.RESTAURANT_ADMIN]: 'Admin restaurant',
+  [Role.STAFF]: 'Personnel',
   [Role.CLIENT]: 'Client',
 }
+
+/** Libellés français des permissions, pour l'interface de gestion. */
+export const LIBELLES_PERMISSION: Record<Permission, string> = {
+  [Permission.CAISSE]: 'Caisse',
+  [Permission.CUISINE]: 'Cuisine',
+  [Permission.STOCK]: 'Stock',
+  [Permission.HYGIENE]: 'Hygiène',
+  [Permission.EQUIPE]: 'Équipe',
+  [Permission.CLIENTS]: 'Clients',
+  [Permission.PILOTAGE]: 'Pilotage',
+}
+
+/** Toutes les permissions, dans l'ordre d'affichage de l'interface. */
+export const TOUTES_LES_PERMISSIONS: Permission[] = [
+  Permission.CAISSE,
+  Permission.CUISINE,
+  Permission.STOCK,
+  Permission.HYGIENE,
+  Permission.EQUIPE,
+  Permission.CLIENTS,
+  Permission.PILOTAGE,
+]
+
+/** Zone (chemin) couverte par chaque permission. */
+export const ZONE_PAR_PERMISSION: Record<Permission, string> = {
+  [Permission.CAISSE]: '/caisse',
+  [Permission.CUISINE]: '/cuisine',
+  [Permission.STOCK]: '/stock',
+  [Permission.HYGIENE]: '/hygiene',
+  [Permission.EQUIPE]: '/equipe',
+  [Permission.CLIENTS]: '/clients',
+  [Permission.PILOTAGE]: '/pilotage',
+}
+
+/** Inverse : chemin → permission correspondante, pour les routes API. */
+export const PERMISSION_PAR_ZONE: Record<string, Permission> = Object.fromEntries(
+  Object.entries(ZONE_PAR_PERMISSION).map(([permission, zone]) => [
+    zone,
+    permission as Permission,
+  ]),
+)
+
+/** Zones réellement accessibles à un STAFF selon ses permissions. */
+export function zonesStaff(permissions: Permission[]): string[] {
+  return permissions.map((p) => ZONE_PAR_PERMISSION[p])
+}
+
+/** Première zone autorisée d'un STAFF, ou null si aucune permission. */
+export function zoneDaccueilStaff(permissions: Permission[]): string | null {
+  return zonesStaff(permissions)[0] ?? null
+}
+
+/**
+ * Page montrée à un STAFF sans aucune permission : accès refusé.
+ * Elle ne doit jamais rediriger (voir proxy.ts).
+ */
+export const PAGE_ACCES_REFUSE = '/acces-refuse'
 
 /** Où chaque rôle est renvoyé après connexion. */
 export const ACCUEIL_PAR_ROLE: Record<Role, string> = {
   [Role.SUPER_ADMIN]: '/super-admin',
   [Role.RESTAURANT_ADMIN]: '/back-office',
+  [Role.STAFF]: PAGE_ACCES_REFUSE,
   [Role.CLIENT]: '/',
 }
 
@@ -37,6 +128,7 @@ const ZONES_PAR_ROLE: Record<Role, string[]> = {
     '/clients',
     '/abonnement',
   ],
+  [Role.STAFF]: Object.values(ZONE_PAR_PERMISSION),
   [Role.CLIENT]: ['/'],
 }
 
@@ -44,8 +136,15 @@ const ZONES_PAR_ROLE: Record<Role, string[]> = {
  * Destination après connexion : honore le paramètre `suivant` uniquement
  * si la cible est réellement accessible au rôle — jamais un chemin
  * arbitraire (le proxy re-vérifie de toute façon).
+ * Pour un STAFF, la cible doit en plus être couverte par ses permissions ;
+ * sinon il est ramené vers sa première zone autorisée (ou la page
+ * « Accès refusé » si aucune permission).
  */
-export function destinationPour(role: Role, suivant?: string | null): string {
+export function destinationPour(
+  role: Role,
+  permissions: Permission[] = [],
+  suivant?: string | null,
+): string {
   if (
     typeof suivant === 'string' &&
     suivant.startsWith('/') &&
@@ -55,7 +154,16 @@ export function destinationPour(role: Role, suivant?: string | null): string {
       z === '/' ? suivant === '/' : suivant.startsWith(z),
     )
   ) {
-    return suivant
+    if (role !== Role.STAFF) return suivant
+    const zoneDemandee = ZONES_PAR_ROLE[role].find((z) =>
+      suivant.startsWith(z),
+    )
+    if (zoneDemandee && zonesStaff(permissions).includes(zoneDemandee)) {
+      return suivant
+    }
+  }
+  if (role === Role.STAFF) {
+    return zoneDaccueilStaff(permissions) ?? PAGE_ACCES_REFUSE
   }
   return ACCUEIL_PAR_ROLE[role]
 }
@@ -125,6 +233,11 @@ export type Restaurant = {
 /**
  * Table `users`. Le mot de passe n'est jamais stocké en clair :
  * `password_hash` est un hash bcrypt.
+ *
+ * Compatibilité ascendante : les comptes écrits avant l'introduction de
+ * `permissions` / `actif` peuvent ne pas porter ces champs. `lireBdd()`
+ * applique des valeurs par défaut à la lecture (`actif: true`,
+ * `permissions: []`) — ne jamais supposer leur présence côté appelant.
  */
 export type Utilisateur = {
   id: string
@@ -132,9 +245,12 @@ export type Utilisateur = {
   password_hash: string
   nom: string
   role: Role
-  /** Rempli seulement pour un RESTAURANT_ADMIN — scope ses accès à son restaurant. */
+  /** Rempli seulement pour un RESTAURANT_ADMIN ou STAFF — scope ses accès à son restaurant. */
   restaurantId: string | null
+  /** Désactivation logique : un compte désactivé ne peut plus se connecter. */
   actif: boolean
+  /** Rempli uniquement pour un STAFF ; vide/ignoré pour les autres rôles. */
+  permissions: Permission[]
   creeLe: string
 }
 
@@ -145,6 +261,7 @@ export type SessionUtilisateur = {
   nom: string
   role: Role
   restaurantId: string | null
+  permissions: Permission[]
 }
 
 export type Abonnement = {

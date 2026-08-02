@@ -22,6 +22,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useAlba } from '@/lib/store'
 import { initialesDe, useAuth } from '@/lib/auth-contexte'
+import { Permission, Role } from '@/lib/auth'
 import { SyncPill } from '@/components/sync-pill'
 import { Notifs } from '@/components/notifs'
 import { Palette } from '@/components/palette'
@@ -34,25 +35,42 @@ type Entree = {
   icon: typeof ChartPieIcon
   /** clé d'alerte à afficher en pastille */
   alerte?: 'cuisine' | 'stock' | 'haccp'
+  /** permission requise pour un STAFF ; absent = réservé à l'admin */
+  permission?: Permission
 }
 
 /** Les 4 écrans du service quotidien restent au pouce ; le reste passe dans « Plus ». */
 const PRINCIPAL: Entree[] = [
-  { href: '/pilotage', label: 'Pilotage', short: 'Pilotage', icon: ChartPieIcon },
-  { href: '/caisse', label: 'Caisse', short: 'Caisse', icon: ScanBarcodeIcon },
-  { href: '/cuisine', label: 'Cuisine', short: 'Cuisine', icon: FlameIcon, alerte: 'cuisine' },
-  { href: '/stock', label: 'Stock', short: 'Stock', icon: PackageIcon, alerte: 'stock' },
+  { href: '/pilotage', label: 'Pilotage', short: 'Pilotage', icon: ChartPieIcon, permission: Permission.PILOTAGE },
+  { href: '/caisse', label: 'Caisse', short: 'Caisse', icon: ScanBarcodeIcon, permission: Permission.CAISSE },
+  { href: '/cuisine', label: 'Cuisine', short: 'Cuisine', icon: FlameIcon, alerte: 'cuisine', permission: Permission.CUISINE },
+  { href: '/stock', label: 'Stock', short: 'Stock', icon: PackageIcon, alerte: 'stock', permission: Permission.STOCK },
 ]
 
 const SECONDAIRE: Entree[] = [
   { href: '/back-office', label: 'Back-office', short: 'Back-office', icon: LayoutGridIcon },
-  { href: '/hygiene', label: 'Hygiène', short: 'Hygiène', icon: ClipboardCheckIcon, alerte: 'haccp' },
-  { href: '/equipe', label: 'Équipe', short: 'Équipe', icon: UsersIcon },
-  { href: '/clients', label: 'Clients', short: 'Clients', icon: HeartIcon },
+  { href: '/hygiene', label: 'Hygiène', short: 'Hygiène', icon: ClipboardCheckIcon, alerte: 'haccp', permission: Permission.HYGIENE },
+  { href: '/equipe', label: 'Équipe', short: 'Équipe', icon: UsersIcon, permission: Permission.EQUIPE },
+  { href: '/clients', label: 'Clients', short: 'Clients', icon: HeartIcon, permission: Permission.CLIENTS },
   { href: '/abonnement', label: 'Abonnement', short: 'Abonnement', icon: ReceiptTextIcon },
 ]
 
 export const NAV_COMPLET = [...PRINCIPAL, ...SECONDAIRE]
+
+/** Filtre les entrées selon le rôle et les permissions réelles du compte. */
+function entréesVisibles(
+  entrees: Entree[],
+  utilisateur: { role: Role; permissions?: Permission[] } | null,
+) {
+  if (utilisateur?.role === Role.RESTAURANT_ADMIN) return entrees
+  if (utilisateur?.role === Role.STAFF) {
+    const permissions = utilisateur.permissions ?? []
+    return entrees.filter(
+      (e) => e.permission && permissions.includes(e.permission),
+    )
+  }
+  return []
+}
 
 function AlbaMark({ className }: { className?: string }) {
   return (
@@ -115,7 +133,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     haccp: indicateurs.haccpRestant,
   }
 
-  const alertesSecondaires = SECONDAIRE.reduce(
+  // Navigation adaptée aux permissions réelles : un STAFF ne voit que ses
+  // zones ; l'ABONNEMENT et le back-office restent réservés à la gérante.
+  const principal = entréesVisibles(PRINCIPAL, utilisateur)
+  const secondaire = entréesVisibles(SECONDAIRE, utilisateur)
+
+  const alertesSecondaires = secondaire.reduce(
     (n, e) => n + (e.alerte ? compteurs[e.alerte] : 0),
     0,
   )
@@ -156,7 +179,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </button>
 
         <nav aria-label="Navigation principale" className="flex flex-col gap-1">
-          {NAV_COMPLET.map((item) => {
+          {[...principal, ...secondaire].map((item) => {
             const actif = estActif(pathname, item.href)
             const compte = item.alerte ? compteurs[item.alerte] : 0
             return (
@@ -265,7 +288,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         aria-label="Navigation principale"
         className="glass fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border px-1 pb-[env(safe-area-inset-bottom)] pt-1 lg:hidden"
       >
-        {PRINCIPAL.map((item) => {
+        {principal.map((item) => {
           const actif = estActif(pathname, item.href)
           const compte = item.alerte ? compteurs[item.alerte] : 0
           return (
@@ -328,7 +351,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         sous="Ce qui ne se gère pas en pleine rush."
       >
         <div className="flex flex-col gap-2">
-          {SECONDAIRE.map((item) => {
+          {secondaire.map((item) => {
             const compte = item.alerte ? compteurs[item.alerte] : 0
             return (
               <Link

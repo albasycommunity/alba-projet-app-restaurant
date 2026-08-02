@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
       nom: utilisateur.nom,
       role: utilisateur.role,
       restaurantId: utilisateur.restaurantId,
+      permissions: utilisateur.permissions ?? [],
       restaurantNom: restaurant?.nom ?? null,
     },
     abonnement: abonnement

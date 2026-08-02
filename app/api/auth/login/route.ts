@@ -45,16 +45,22 @@ export async function POST(req: NextRequest) {
     nom: utilisateur.nom,
     role: utilisateur.role,
     restaurantId: utilisateur.restaurantId,
+    permissions: utilisateur.permissions ?? [],
   })
 
   const reponse = NextResponse.json({
-    destination: destinationPour(utilisateur.role, suivant),
+    destination: destinationPour(
+      utilisateur.role,
+      utilisateur.permissions ?? [],
+      suivant,
+    ),
     utilisateur: {
       id: utilisateur.id,
       email: utilisateur.email,
       nom: utilisateur.nom,
       role: utilisateur.role,
       restaurantId: utilisateur.restaurantId,
+      permissions: utilisateur.permissions ?? [],
     },
   })
   cookieSession(reponse, token)

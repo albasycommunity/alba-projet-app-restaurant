@@ -13,6 +13,8 @@ import { NextResponse } from 'next/server'
 import {
   NOM_COOKIE_SESSION,
   Role,
+  TOUTES_LES_PERMISSIONS,
+  type Permission,
   type SessionUtilisateur,
 } from '@/lib/auth'
 import {
@@ -38,6 +40,7 @@ export type JwtAlba = {
   nom: string
   role: Role
   restaurantId: string | null
+  permissions: Permission[]
 }
 
 export function sessionPour(utilisateur: SessionUtilisateur): JwtAlba {
@@ -47,6 +50,7 @@ export function sessionPour(utilisateur: SessionUtilisateur): JwtAlba {
     nom: utilisateur.nom,
     role: utilisateur.role,
     restaurantId: utilisateur.restaurantId,
+    permissions: utilisateur.permissions ?? [],
   }
 }
 
@@ -68,6 +72,16 @@ export async function verifierSession(token: string): Promise<JwtAlba | null> {
     ) {
       return null
     }
+    // Les permissions du token sont indicatives (sessions signées avant
+    // l'ajout du champ, ou obsolètes) : chaque requête sensible les
+    // re-valide depuis le store — jamais confiance au token seul.
+    const permissions = Array.isArray(payload.permissions)
+      ? payload.permissions.filter(
+          (p): p is Permission =>
+            typeof p === 'string' &&
+            (TOUTES_LES_PERMISSIONS as string[]).includes(p),
+        )
+      : []
     return {
       uid: payload.uid,
       email: typeof payload.email === 'string' ? payload.email : '',
@@ -75,6 +89,7 @@ export async function verifierSession(token: string): Promise<JwtAlba | null> {
       role: payload.role as Role,
       restaurantId:
         typeof payload.restaurantId === 'string' ? payload.restaurantId : null,
+      permissions,
     }
   } catch {
     return null
@@ -205,5 +220,46 @@ export async function lireBddEtVerifierRestaurant(restaurantId: string) {
     abonnement: bdd.abonnements
       .filter((a) => a.restaurantId === restaurantId)
       .sort((a, b) => b.dateFin.localeCompare(a.dateFin))[0],
+  }
+}
+
+/**
+ * Garde par permission pour les zones métier. Le rôle ET les permissions
+ * sont rechargés depuis le store à chaque requête (aucune confiance au
+ * cookie) :
+ * - RESTAURANT_ADMIN : accès total par construction (voit tout).
+ * - STAFF : doit posséder la permission demandée, à jour.
+ * - autres rôles : refus.
+ */
+export async function exigerPermission(
+  req: NextRequest,
+  permission: Permission,
+): Promise<Garde> {
+  const session = await sessionDepuisRequete(req)
+  if (!session) {
+    return {
+      ok: false,
+      reponse: NextResponse.json(
+        { erreur: 'Non connecté' },
+        { status: 401 },
+      ),
+    }
+  }
+  const { utilisateur } = session
+  if (utilisateur.role === Role.RESTAURANT_ADMIN) {
+    return { ok: true, utilisateur, abonnement: session.abonnement }
+  }
+  if (
+    utilisateur.role === Role.STAFF &&
+    (utilisateur.permissions ?? []).includes(permission)
+  ) {
+    return { ok: true, utilisateur, abonnement: session.abonnement }
+  }
+  return {
+    ok: false,
+    reponse: NextResponse.json(
+      { erreur: 'Accès refusé : permission manquante' },
+      { status: 403 },
+    ),
   }
 }

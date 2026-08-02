@@ -14,6 +14,7 @@ import path from 'node:path'
 import { hashSync } from 'bcryptjs'
 import {
   DUREE_ESSAI_JOURS,
+  Permission,
   Role,
   dateDans,
   dateIso,
@@ -52,6 +53,7 @@ export const COMPTES_DEMO: {
   nom: string
   restaurantId?: string
   fidelite?: { points: number; visites: number; panierMoyen: number }
+  permissions?: Permission[]
 }[] = [
   {
     role: Role.SUPER_ADMIN,
@@ -81,6 +83,22 @@ export const COMPTES_DEMO: {
     restaurantId: 'r3',
   },
   {
+    role: Role.STAFF,
+    email: 'caissiere@chezfatou.sn',
+    motDePasse: 'Caissiere2026!',
+    nom: 'Aïssatou Diallo',
+    restaurantId: 'r1',
+    permissions: [Permission.CAISSE, Permission.CLIENTS],
+  },
+  {
+    role: Role.STAFF,
+    email: 'cuisinier@chezfatou.sn',
+    motDePasse: 'Cuisinier2026!',
+    nom: 'Moussa Sow',
+    restaurantId: 'r1',
+    permissions: [Permission.CUISINE],
+  },
+  {
     role: Role.CLIENT,
     email: 'client@demo.sn',
     motDePasse: 'Client2026!',
@@ -108,6 +126,7 @@ function bddInitiale(): Bdd {
     role: c.role,
     restaurantId: c.restaurantId ?? null,
     actif: true,
+    permissions: c.permissions ?? [],
     creeLe: ilYAJours(220),
   }))
 
@@ -181,12 +200,34 @@ function bddInitiale(): Bdd {
 export async function lireBdd(): Promise<Bdd> {
   try {
     const brut = await readFile(FICHIER, 'utf-8')
-    return JSON.parse(brut) as Bdd
+    const bdd = JSON.parse(brut) as Bdd
+    return normaliserBdd(bdd)
   } catch {
     const initiale = bddInitiale()
     await sauverBdd(initiale)
     return initiale
   }
+}
+
+/**
+ * Compatibilité ascendante — CORRECTION du bug « impossible de se
+ * connecter à un compte existant » : les comptes créés avant
+ * l'introduction de `actif` / `permissions` ne portent pas ces champs.
+ * La lecture les ramène à leurs valeurs par défaut sûres au lieu de les
+ * traiter comme « désactivés » ou « sans droits » :
+ *   - actif absent      → true  (un compte n'est jamais désactivé par défaut)
+ *   - permissions absent → []   (un STAFF sans champ reçoit zéro permission,
+ *                                jamais un accès accordé par défaut)
+ */
+function normaliserBdd(bdd: Bdd): Bdd {
+  bdd.version = 2
+  bdd.utilisateurs = bdd.utilisateurs.map((u) => ({
+    ...u,
+    actif: u.actif !== undefined ? u.actif : true,
+    permissions: Array.isArray(u.permissions) ? u.permissions : [],
+    role: u.role ?? Role.CLIENT,
+  }))
+  return bdd
 }
 
 export async function sauverBdd(bdd: Bdd) {
@@ -284,6 +325,7 @@ export async function creerRestaurantAvecAbonnement(input: {
       role: Role.RESTAURANT_ADMIN,
       restaurantId: restaurant.id,
       actif: true,
+      permissions: [],
       creeLe: dateIso(maintenant),
     }
     const abonnement: Abonnement = {
@@ -333,6 +375,7 @@ export async function creerRestaurantEnEssai(input: {
       role: Role.RESTAURANT_ADMIN,
       restaurantId: restaurant.id,
       actif: true,
+      permissions: [],
       creeLe: dateIso(maintenant),
     }
     const abonnement: Abonnement = {
@@ -347,6 +390,53 @@ export async function creerRestaurantEnEssai(input: {
     bdd.restaurants.push(restaurant)
     bdd.utilisateurs.push(admin)
     bdd.abonnements.push(abonnement)
+  })
+}
+
+/**
+ * Crée un membre du personnel (STAFF) rattaché au restaurant de la gérante.
+ * Le rôle, le restaurant et les permissions sont déterminés côté serveur :
+ * jamais de champ `role` ou `permissions` accepté depuis le client.
+ */
+export async function creerPersonnel(input: {
+  restaurantId: string
+  nom: string
+  email: string
+  motDePasse: string
+  permissions: Permission[]
+}) {
+  const maintenant = new Date()
+  return muterBdd((bdd) => {
+    bdd.utilisateurs.push({
+      id: nouveauId('u'),
+      email: input.email.trim().toLowerCase(),
+      password_hash: hashSync(input.motDePasse, 10),
+      nom: input.nom.trim(),
+      role: Role.STAFF,
+      restaurantId: input.restaurantId,
+      actif: true,
+      permissions: input.permissions,
+      creeLe: dateIso(maintenant),
+    })
+  })
+}
+
+/**
+ * Modifie un membre du personnel : nom, permissions, désactivation logique.
+ * Ne touche jamais au rôle (un STAFF reste STAFF).
+ */
+export async function modifierPersonnel(input: {
+  id: string
+  nom?: string
+  permissions?: Permission[]
+  actif?: boolean
+}) {
+  return muterBdd((bdd) => {
+    const cible = bdd.utilisateurs.find((u) => u.id === input.id)
+    if (!cible) return
+    if (input.nom !== undefined) cible.nom = input.nom.trim()
+    if (input.permissions !== undefined) cible.permissions = input.permissions
+    if (input.actif !== undefined) cible.actif = input.actif
   })
 }
 
