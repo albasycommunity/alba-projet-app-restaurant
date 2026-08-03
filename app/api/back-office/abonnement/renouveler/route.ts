@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   const garde = await exigerRole(req, [Role.RESTAURANT_ADMIN])
   if (!garde.ok) return garde.reponse
 
-  if (!requeteAutorisee(req, 'renouveler', LIMITE_RENOUVELLEMENT)) {
+  if (!(await requeteAutorisee(req, 'renouveler', LIMITE_RENOUVELLEMENT))) {
     return reponseTropDeRequetes(
       'Trop de demandes. Réessaie dans une minute.',
     )

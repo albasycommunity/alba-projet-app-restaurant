@@ -1,21 +1,31 @@
 /**
- * Couche de données serveur. En l'absence de base de données sur le projet,
- * la persistance se fait dans un fichier JSON (data/alba-bdd.json) créé et
- * seedé au premier accès. Les fonctions sont `server-only` : elles ne sont
- * jamais importées depuis le client.
+ * Couche de données serveur — Supabase (Postgres) côté serveur via la clé
+ * `service_role` (contourne RLS : toute l'autorisation est faite dans les
+ * routes API et le proxy). Les fonctions sont `server-only` : jamais
+ * importées depuis le client.
  *
- * Remplaçable par une vraie base (Postgres, etc.) sans changer l'API des
- * routes : il suffit de réimplémenter les mêmes fonctions.
+ * L'API exportée est IDENTIQUE à l'ancienne version fichier JSON : aucune
+ * route API n'a été modifiée pour la migration.
+ *
+ * Lectures : cache mémoire court (ttlCacheMs), comme avant — une écriture
+ * faite par une autre instance est vue au plus tard après ce TTL.
+ * Écritures : `muterBdd` relit l'état FRAIS depuis Postgres, applique la
+ * mutation, puis synchronise par table SEULEMENT les tables réellement
+ * modifiées (comparaison ordre-indépendante) — jamais de réécriture
+ * complète pour une petite mutation.
+ * Compteur de commandes : incrément ATOMIQUE côté SQL (RPC
+ * `incrementer_compteur`, UPDATE ... RETURNING) — pas de lire-puis-écrire,
+ * donc pas de race condition entre instances serverless.
+ * Erreurs : jamais de détail Postgres vers le client — tout est loggé
+ * côté serveur (logger), le client reçoit un message générique.
  */
 
 import 'server-only'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import path from 'node:path'
 import { hashSync } from 'bcryptjs'
 import {
   DUREE_ESSAI_JOURS,
-  Permission,
   PLANS_ABONNEMENT,
+  Permission,
   Role,
   dateDans,
   dateIso,
@@ -39,10 +49,10 @@ import {
   type Utilisateur,
   type WebhookJournal,
 } from '@/lib/auth'
+import { logger } from '@/lib/server/logger'
+import { supabase } from '@/lib/server/supabase'
 
-const FICHIER = path.join(process.cwd(), 'data', 'alba-bdd.json')
-
-/** Version du format de données. Bumpée à chaque migration de schéma. */
+/** Version du format de données (historique, conservée pour compatibilité). */
 const VERSION_BDD = 3
 
 export type Bdd = {
@@ -125,119 +135,119 @@ export const COMPTES_DEMO: {
   },
 ]
 
-function bddInitiale(): Bdd {
-  const maintenant = new Date()
-  const ilYAJours = (n: number) =>
-    dateIso(new Date(maintenant.getTime() - n * 86_400_000))
+/* ------------------------------ client Supabase ------------------------------ */
 
-  const restaurants: Restaurant[] = [
-    { id: 'r1', nom: 'Chez Fatou', quartier: 'Ngor, Dakar', gerant: 'Fatou Ndiaye', actif: true, creeLe: ilYAJours(220) },
-    { id: 'r2', nom: 'Le Baobab Bleu', quartier: 'Pointe des Almadies', gerant: 'Gora Ndiaye', actif: true, creeLe: ilYAJours(140) },
-    { id: 'r3', nom: 'Teranga Grill', quartier: 'Plateau, Dakar', gerant: 'Adama Ba', actif: true, creeLe: ilYAJours(65) },
-  ]
+/** Timestamptz → ISO normalisé (format Z), stable pour les comparaisons. */
+function iso(valeur: string | null | undefined): string | undefined {
+  if (valeur === null || valeur === undefined) return undefined
+  return new Date(valeur).toISOString()
+}
 
-  const utilisateurs: Utilisateur[] = COMPTES_DEMO.map((c) => ({
-    id: nouveauId('u'),
-    email: c.email,
-    password_hash: hashSync(c.motDePasse, 10),
-    nom: c.nom,
-    role: c.role,
-    restaurantId: c.restaurantId ?? null,
-    actif: true,
-    permissions: c.permissions ?? [],
-    creeLe: ilYAJours(220),
-  }))
+/** Message lisible d'une erreur Supabase (PostgrestError n'est pas une Error). */
+function messageErreur(erreur: unknown): string {
+  if (erreur instanceof Error) return erreur.message
+  if (typeof erreur === 'object' && erreur !== null) {
+    const e = erreur as { message?: unknown; details?: unknown; code?: unknown }
+    const morceaux = [e.message, e.details, e.code]
+      .filter((m) => typeof m === 'string' && m)
+    if (morceaux.length > 0) return morceaux.join(' | ')
+  }
+  return String(erreur)
+}
 
-  const abonnements: Abonnement[] = [
-    {
-      id: 'a1',
-      restaurantId: 'r1',
-      plan: 'mensuel',
-      // Démo : Fatou a déjà une caissière ET un cuisinier → Pro.
-      // (Le fichier existant sans `palier` résout Pro via palierDeRestaurant.)
-      palier: 'pro',
-      statut: 'actif',
-      dateDebut: ilYAJours(20),
-      // Expire dans ~17 jours : la bannière « bientôt l'échéance » s'affiche.
-      dateFin: dateDans(17),
-      montant: 35_000,
-    },
-    {
-      id: 'a2',
-      restaurantId: 'r2',
-      plan: 'mensuel',
-      palier: 'starter',
-      statut: 'expire',
-      dateDebut: ilYAJours(55),
-      dateFin: ilYAJours(5),
-      montant: 15_000,
-    },
-    {
-      id: 'a3',
-      restaurantId: 'r3',
-      plan: 'annuel',
-      palier: 'starter',
-      statut: 'actif',
-      dateDebut: ilYAJours(30),
-      dateFin: dateDans(182),
-      montant: 150_000,
-    },
-  ]
+/** Erreur Supabase : loggée côté serveur, jamais renvoyée au client. */
+function erreurBdd(operation: string, erreur: unknown): never {
+  logger('bdd', 'erreur', 'Erreur Supabase', {
+    operation,
+    detail: messageErreur(erreur),
+  })
+  throw new Error('Erreur interne de la base de données.')
+}
 
-  const paiements: Paiement[] = [
-    { id: nouveauId('p'), abonnementId: 'a1', restaurantId: 'r1', restaurantNom: 'Chez Fatou', montant: 25_000, mode: 'Wave', motif: 'Abonnement mensuel', date: ilYAJours(20) },
-    { id: nouveauId('p'), abonnementId: 'a3', restaurantId: 'r3', restaurantNom: 'Teranga Grill', montant: 250_000, mode: 'Orange Money', motif: 'Abonnement annuel', date: ilYAJours(30) },
-    { id: nouveauId('p'), abonnementId: 'a1', restaurantId: 'r1', restaurantNom: 'Chez Fatou', montant: 25_000, mode: 'Wave', motif: 'Abonnement mensuel', date: ilYAJours(50) },
-    { id: nouveauId('p'), abonnementId: 'a2', restaurantId: 'r2', restaurantNom: 'Le Baobab Bleu', montant: 25_000, mode: 'Free Money', motif: 'Abonnement mensuel', date: ilYAJours(55) },
-  ]
+/* ------------------------------ mapping lignes ------------------------------ */
 
-  const fidelite: FideliteClient[] = utilisateurs
-    .filter((u) => u.role === Role.CLIENT)
-    .map((u) => {
-      const seed = COMPTES_DEMO.find((c) => c.email === u.email)
-      return {
-        userId: u.id,
-        points: seed?.fidelite?.points ?? 0,
-        visites: seed?.fidelite?.visites ?? 0,
-        panierMoyen: seed?.fidelite?.panierMoyen ?? 0,
-      }
-    })
+type Ligne = Record<string, unknown>
 
+function restaurantVersLigne(r: Restaurant): Ligne {
+  return { id: r.id, nom: r.nom, quartier: r.quartier, gerant: r.gerant, actif: r.actif, cree_le: r.creeLe }
+}
+function restaurantDepuisLigne(l: Record<string, unknown>): Restaurant {
+  return { id: String(l.id), nom: String(l.nom), quartier: String(l.quartier), gerant: String(l.gerant), actif: Boolean(l.actif), creeLe: iso(String(l.cree_le))! }
+}
+function utilisateurVersLigne(u: Utilisateur): Ligne {
+  return { id: u.id, email: u.email, password_hash: u.password_hash, nom: u.nom, role: u.role, restaurant_id: u.restaurantId, actif: u.actif, permissions: u.permissions, cree_le: u.creeLe }
+}
+function utilisateurDepuisLigne(l: Record<string, unknown>): Utilisateur {
+  return { id: String(l.id), email: String(l.email), password_hash: String(l.password_hash), nom: String(l.nom), role: l.role as Role, restaurantId: (l.restaurant_id as string | null) ?? null, actif: Boolean(l.actif), permissions: Array.isArray(l.permissions) ? (l.permissions as Permission[]) : [], creeLe: iso(String(l.cree_le))! }
+}
+function abonnementVersLigne(a: Abonnement): Ligne {
+  return { id: a.id, restaurant_id: a.restaurantId, plan: a.plan, palier: a.palier ?? null, statut: a.statut, date_debut: a.dateDebut, date_fin: a.dateFin, montant: a.montant }
+}
+function abonnementDepuisLigne(l: Record<string, unknown>): Abonnement {
+  return { id: String(l.id), restaurantId: String(l.restaurant_id), plan: l.plan as PlanAbonnement, palier: palierValide(l.palier) ? l.palier : undefined, statut: l.statut as StatutAbonnement, dateDebut: iso(String(l.date_debut))!, dateFin: iso(String(l.date_fin))!, montant: Number(l.montant) }
+}
+function paiementVersLigne(p: Paiement): Ligne {
+  return { id: p.id, abonnement_id: p.abonnementId, restaurant_id: p.restaurantId, restaurant_nom: p.restaurantNom, montant: p.montant, mode: p.mode, motif: p.motif, date: p.date }
+}
+function paiementDepuisLigne(l: Record<string, unknown>): Paiement {
+  return { id: String(l.id), abonnementId: String(l.abonnement_id), restaurantId: String(l.restaurant_id), restaurantNom: String(l.restaurant_nom), montant: Number(l.montant), mode: l.mode as ModePaiementAbonnement, motif: String(l.motif), date: iso(String(l.date))! }
+}
+function fideliteVersLigne(f: FideliteClient): Ligne {
+  return { user_id: f.userId, points: f.points, visites: f.visites, panier_moyen: f.panierMoyen }
+}
+function fideliteDepuisLigne(l: Record<string, unknown>): FideliteClient {
+  return { userId: String(l.user_id), points: Number(l.points), visites: Number(l.visites), panierMoyen: Number(l.panier_moyen) }
+}
+function commandeVersLigne(c: CommandeClient): Ligne {
+  return { id: c.id, ref: c.ref, client_id: c.clientId, client_nom: c.clientNom, restaurant_id: c.restaurantId, lignes: c.lignes, total: c.total, cree_a: c.creeA }
+}
+function commandeDepuisLigne(l: Record<string, unknown>): CommandeClient {
+  return { id: String(l.id), ref: String(l.ref), clientId: String(l.client_id), clientNom: String(l.client_nom), restaurantId: String(l.restaurant_id), lignes: l.lignes as CommandeClient['lignes'], total: Number(l.total), creeA: iso(String(l.cree_a))! }
+}
+function transactionVersLigne(t: TransactionPaiement): Ligne {
+  return { id: t.id, fournisseur: t.fournisseur, order_id: t.orderId, abonnement_id: t.abonnementId, restaurant_id: t.restaurantId, plan: t.plan, palier: t.palier ?? null, montant: t.montant, statut: t.statut, cree_le: t.creeLe, paye_le: t.payeLe ?? null, methode: t.methode ?? null, frais: t.frais ?? null }
+}
+function transactionDepuisLigne(l: Record<string, unknown>): TransactionPaiement {
+  return { id: String(l.id), fournisseur: 'naboopay', orderId: String(l.order_id), abonnementId: String(l.abonnement_id), restaurantId: String(l.restaurant_id), plan: l.plan as PlanAbonnement, palier: palierValide(l.palier) ? l.palier : undefined, montant: Number(l.montant), statut: l.statut as TransactionPaiement['statut'], creeLe: iso(String(l.cree_le))!, payeLe: l.paye_le ? iso(String(l.paye_le)) : undefined, methode: l.methode !== null && l.methode !== undefined ? String(l.methode) : undefined, frais: l.frais !== null && l.frais !== undefined ? Number(l.frais) : undefined }
+}
+function webhookVersLigne(w: WebhookJournal): Ligne {
+  return { id: w.id, fournisseur: w.fournisseur, recu_le: w.recuLe, signature_valide: w.signatureValide, statut: w.statut, ordre_id: w.ordreId ?? null, detail: w.detail ?? null, corps: w.corps }
+}
+function webhookDepuisLigne(l: Record<string, unknown>): WebhookJournal {
+  return { id: String(l.id), fournisseur: 'naboopay', recuLe: iso(String(l.recu_le))!, signatureValide: Boolean(l.signature_valide), statut: l.statut as WebhookJournal['statut'], ordreId: l.ordre_id !== null && l.ordre_id !== undefined ? String(l.ordre_id) : undefined, detail: l.detail !== null && l.detail !== undefined ? String(l.detail) : undefined, corps: String(l.corps ?? '') }
+}
+function parametresVersLigne(p: ParametresPaiement): Ligne {
+  return { id: 1, numeros_mobile_money: p.numerosMobileMoney, naboopay_actif: p.naboopay.actif, naboopay_api_key: p.naboopay.apiKey, naboopay_webhook_secret: p.naboopay.webhookSecret }
+}
+function parametresDepuisLigne(l: Record<string, unknown> | null): ParametresPaiement {
+  const defaut = parametresPaiementParDefaut()
+  if (!l) return defaut
+  const numeros = l.numeros_mobile_money as Partial<NumerosMobileMoney> | null
   return {
-    version: VERSION_BDD,
-    restaurants,
-    utilisateurs,
-    abonnements,
-    paiements,
-    fidelite,
-    commandesClients: [],
-    compteurCommandes: 400,
-    parametresPaiement: parametresPaiementParDefaut(),
-    transactionsPaiement: [],
-    webhooksPaiement: [],
+    numerosMobileMoney: {
+      Wave: String(numeros?.Wave ?? defaut.numerosMobileMoney.Wave),
+      'Orange Money': String(numeros?.['Orange Money'] ?? defaut.numerosMobileMoney['Orange Money']),
+      'Free Money': String(numeros?.['Free Money'] ?? defaut.numerosMobileMoney['Free Money']),
+    },
+    naboopay: {
+      actif: Boolean(l.naboopay_actif),
+      apiKey: String(l.naboopay_api_key ?? ''),
+      webhookSecret: String(l.naboopay_webhook_secret ?? ''),
+    },
   }
 }
 
+/* ------------------------------- cache mémoire ------------------------------- */
+
 /**
- * Cache mémoire — la lecture disque + JSON.parse par requête (proxy inclus,
- * qui fait 2 à 3 lectures à chaque page) est le premier goulot de montée en
- * charge. Le store est un fichier JSON : tant que l'on reste sur une seule
- * instance, le cache garde la cohérence avec des règles simples :
- *
- * - Le bundle des routes API ÉCRIT : le cache y est invalidé en
- *   write-through (toute écriture incrémente `versionEcritures` et
- *   remplace l'objet caché). Une lecture voit donc toujours l'état le
- *   plus récent, sans lire le disque.
- * - Le bundle proxy (Next 16 est bundlé séparément) ne fait que LIRE :
- *   il vit sur son propre cache, rafraîchi au plus après `ttlMs`
- *   (configuré par le proxy via configurerCacheBdd). Staleness bornée.
- * - `ttlMs` sert aussi de filet de sécurité entre instances distinctes
- *   (PM2 cluster, plusieurs pods) : une écriture faite ailleurs est vue
- *   au plus tard après `ttlMs`.
- *
- * RÈGLE D'OR conservée : une lecture n'écrit JAMAIS sur le disque à
- * chaque appel. Le disque n'est touché QUE lorsque les données ont
- * réellement changé (migration une fois, seed une fois par processus).
+ * Cache mémoire — mêmes règles que l'ancienne version fichier :
+ * - le bundle des routes API ÉCRIT : cache invalidé en write-through
+ *   (toute écriture incrémente `versionEcritures` et remplace l'objet
+ *   caché) ;
+ * - le bundle proxy (Next 16 bundlé séparément) ne fait que LIRE :
+ *   fraîcheur bornée par `ttlMs` (configuré via configurerCacheBdd) ;
+ * - `ttlMs` sert de filet entre instances : une écriture faite ailleurs
+ *   est vue au plus tard après `ttlMs`.
  */
 type CacheBdd = {
   bdd: Bdd
@@ -247,9 +257,7 @@ type CacheBdd = {
 
 let cache: CacheBdd | null = null
 let chargementEnCours: Promise<Bdd> | null = null
-/** Incrémenté à chaque écriture réussie (write-through du bundle routes). */
 let versionEcritures = 0
-/** Routes : fraîcheur immédiate. Proxy : TTL court. */
 let ttlCacheMs = 1_000
 
 /** Fixe la durée de vie du cache (appelé par le proxy, bundle lecture seule). */
@@ -258,52 +266,112 @@ export function configurerCacheBdd({ ttlMs }: { ttlMs: number }) {
   cache = null
 }
 
-/** Créé au maximum UNE fois par processus (seed du fichier absent/corrompu). */
-let fichierReinitialiseCeProcessus = false
+/* --------------------------- chargement depuis Supabase --------------------------- */
 
-async function seedMemoire(): Promise<Bdd> {
-  const initiale = bddInitiale()
-  if (!fichierReinitialiseCeProcessus) {
-    // Une seule tentative par processus, quel que soit le résultat :
-    // jamais d'écriture répétée à chaque requête.
-    fichierReinitialiseCeProcessus = true
-    await sauverBdd(initiale).catch(() => {
-      // Échec (permissions, verrou…) : on continue en mémoire.
-    })
-  }
-  return initiale
+async function chargerRestaurants(): Promise<Restaurant[]> {
+  const { data, error } = await supabase.from('restaurants').select('*').order('id')
+  if (error) erreurBdd('lecture restaurants', error)
+  return (data ?? []).map((l) => restaurantDepuisLigne(l as Record<string, unknown>))
 }
 
-async function chargerDepuisDisque(): Promise<Bdd> {
-  let brut: string
-  try {
-    brut = await readFile(FICHIER, 'utf-8')
-  } catch {
-    // Fichier absent ou illisible : seed en mémoire, recréé UNE fois.
-    return seedMemoire()
+async function chargerUtilisateurs(): Promise<Utilisateur[]> {
+  const { data, error } = await supabase.from('utilisateurs').select('*').order('id')
+  if (error) erreurBdd('lecture utilisateurs', error)
+  return (data ?? []).map((l) => utilisateurDepuisLigne(l as Record<string, unknown>))
+}
+
+async function chargerAbonnements(): Promise<Abonnement[]> {
+  const { data, error } = await supabase.from('abonnements').select('*').order('id')
+  if (error) erreurBdd('lecture abonnements', error)
+  return (data ?? []).map((l) => abonnementDepuisLigne(l as Record<string, unknown>))
+}
+
+async function chargerPaiements(): Promise<Paiement[]> {
+  const { data, error } = await supabase
+    .from('paiements')
+    .select('*')
+    .order('date', { ascending: false })
+    .order('id', { ascending: false })
+  if (error) erreurBdd('lecture paiements', error)
+  return (data ?? []).map((l) => paiementDepuisLigne(l as Record<string, unknown>))
+}
+
+async function chargerFidelite(): Promise<FideliteClient[]> {
+  const { data, error } = await supabase.from('fidelite').select('*').order('user_id')
+  if (error) erreurBdd('lecture fidelite', error)
+  return (data ?? []).map((l) => fideliteDepuisLigne(l as Record<string, unknown>))
+}
+
+async function chargerCommandesClients(): Promise<CommandeClient[]> {
+  const { data, error } = await supabase
+    .from('commandes_clients')
+    .select('*')
+    .order('cree_a', { ascending: false })
+    .order('id', { ascending: false })
+  if (error) erreurBdd('lecture commandes_clients', error)
+  return (data ?? []).map((l) => commandeDepuisLigne(l as Record<string, unknown>))
+}
+
+async function chargerCompteur(): Promise<number> {
+  const { data, error } = await supabase.from('compteurs').select('valeur').eq('cle', 'commandes').maybeSingle()
+  if (error) erreurBdd('lecture compteurs', error)
+  return typeof data?.valeur === 'number' ? data.valeur : 0
+}
+
+async function chargerParametres(): Promise<ParametresPaiement> {
+  const { data, error } = await supabase.from('parametres_paiement').select('*').eq('id', 1).maybeSingle()
+  if (error) erreurBdd('lecture parametres_paiement', error)
+  return parametresDepuisLigne((data as Record<string, unknown> | null) ?? null)
+}
+
+async function chargerTransactions(): Promise<TransactionPaiement[]> {
+  const { data, error } = await supabase
+    .from('transactions_paiement')
+    .select('*')
+    .order('cree_le', { ascending: false })
+    .order('id', { ascending: false })
+  if (error) erreurBdd('lecture transactions_paiement', error)
+  return (data ?? []).map((l) => transactionDepuisLigne(l as Record<string, unknown>))
+}
+
+async function chargerWebhooks(): Promise<WebhookJournal[]> {
+  const { data, error } = await supabase
+    .from('webhooks_paiement')
+    .select('*')
+    .order('recu_le', { ascending: false })
+    .order('id', { ascending: false })
+  if (error) erreurBdd('lecture webhooks_paiement', error)
+  return (data ?? []).map((l) => webhookDepuisLigne(l as Record<string, unknown>))
+}
+
+/** Charge l'état complet DEPUIS POSTGRES — jamais le cache. */
+async function chargerBdd(): Promise<Bdd> {
+  const [restaurants, utilisateurs, abonnements, paiements, fidelite, commandesClients, compteurCommandes, parametresPaiement, transactionsPaiement, webhooksPaiement] =
+    await Promise.all([
+      chargerRestaurants(),
+      chargerUtilisateurs(),
+      chargerAbonnements(),
+      chargerPaiements(),
+      chargerFidelite(),
+      chargerCommandesClients(),
+      chargerCompteur(),
+      chargerParametres(),
+      chargerTransactions(),
+      chargerWebhooks(),
+    ])
+  return {
+    version: VERSION_BDD,
+    restaurants,
+    utilisateurs,
+    abonnements,
+    paiements,
+    fidelite,
+    commandesClients,
+    compteurCommandes,
+    parametresPaiement,
+    transactionsPaiement,
+    webhooksPaiement,
   }
-  let bdd: Partial<Bdd>
-  try {
-    bdd = JSON.parse(brut) as Partial<Bdd>
-  } catch {
-    // JSON corrompu : on ne détruit jamais les données, seed en mémoire.
-    return seedMemoire()
-  }
-  if (
-    !Array.isArray(bdd.utilisateurs) ||
-    !Array.isArray(bdd.restaurants)
-  ) {
-    // Fichier inutilisable (ex. `{}` ou tronqué) : seed en mémoire.
-    return seedMemoire()
-  }
-  const normalisee = normaliserBdd(bdd as Bdd)
-  if (normalisee !== bdd) {
-    // Migration de schéma détectée : une SEULE écriture, pas à chaque lecture.
-    await sauverBdd(normalisee).catch(() => {
-      // Échec d'écriture : la normalisation reste valable en mémoire.
-    })
-  }
-  return normalisee
 }
 
 export async function lireBdd(): Promise<Bdd> {
@@ -313,7 +381,7 @@ export async function lireBdd(): Promise<Bdd> {
     if (coherent && dansTtl) return cache.bdd
   }
   if (!chargementEnCours) {
-    chargementEnCours = chargerDepuisDisque().finally(() => {
+    chargementEnCours = chargerBdd().finally(() => {
       chargementEnCours = null
     })
   }
@@ -322,85 +390,142 @@ export async function lireBdd(): Promise<Bdd> {
   return bdd
 }
 
-/**
- * Compatibilité ascendante — CORRECTION du bug « impossible de se
- * connecter à un compte existant » : les comptes créés avant
- * l'introduction de `actif` / `permissions` ne portent pas ces champs.
- * La lecture les ramène à leurs valeurs par défaut sûres au lieu de les
- * traiter comme « désactivés » ou « sans droits » :
- *   - actif absent      → true  (un compte n'est jamais désactivé par défaut)
- *   - permissions absent → []   (un STAFF sans champ reçoit zéro permission,
- *                                jamais un accès accordé par défaut)
- *
- * Immutabilité : si rien ne doit changer, la même référence est renvoyée
- * (aucune écriture). Une migration produit un NOUVEL objet — c'est elle
- * que lireBdd() persiste, une seule fois.
- */
-function normaliserBdd(bdd: Bdd): Bdd {
-  if (bdd.version === VERSION_BDD) return bdd
+/* ----------------------------- synchronisation SQL ----------------------------- */
 
-  const utilisateurs = bdd.utilisateurs.map((u) => ({
-    ...u,
-    actif: u.actif !== undefined ? u.actif : true,
-    permissions: Array.isArray(u.permissions) ? u.permissions : [],
-    role: u.role ?? Role.CLIENT,
-  }))
-  const parametresPaiement: ParametresPaiement = {
-    ...parametresPaiementParDefaut(),
-    ...(bdd.parametresPaiement ?? {}),
-    numerosMobileMoney: {
-      ...parametresPaiementParDefaut().numerosMobileMoney,
-      ...(bdd.parametresPaiement?.numerosMobileMoney ?? {}),
-    },
-    naboopay: {
-      ...parametresPaiementParDefaut().naboopay,
-      ...(bdd.parametresPaiement?.naboopay ?? {}),
-    },
-  }
+type Lignes = Record<string, Ligne[]>
+
+/** Lignes dérivées de l'état mémoire (clés = NOMS RÉELS des tables). */
+function lignesPour(bdd: Bdd): Lignes {
   return {
-    ...bdd,
-    version: VERSION_BDD,
-    utilisateurs,
-    parametresPaiement,
-    transactionsPaiement: Array.isArray(bdd.transactionsPaiement)
-      ? bdd.transactionsPaiement
-      : [],
-    webhooksPaiement: Array.isArray(bdd.webhooksPaiement)
-      ? bdd.webhooksPaiement
-      : [],
+    restaurants: bdd.restaurants.map(restaurantVersLigne),
+    utilisateurs: bdd.utilisateurs.map(utilisateurVersLigne),
+    abonnements: bdd.abonnements.map(abonnementVersLigne),
+    paiements: bdd.paiements.map(paiementVersLigne),
+    fidelite: bdd.fidelite.map(fideliteVersLigne),
+    commandes_clients: bdd.commandesClients.map(commandeVersLigne),
+    compteurs: [{ cle: 'commandes', valeur: bdd.compteurCommandes }],
+    parametres_paiement: [parametresVersLigne(bdd.parametresPaiement)],
+    transactions_paiement: bdd.transactionsPaiement.map(transactionVersLigne),
+    webhooks_paiement: bdd.webhooksPaiement.map(webhookVersLigne),
   }
 }
 
+const CONFLIT_PAR_TABLE: Record<string, string> = {
+  restaurants: 'id',
+  utilisateurs: 'id',
+  abonnements: 'id',
+  paiements: 'id',
+  fidelite: 'user_id',
+  commandes_clients: 'id',
+  compteurs: 'cle',
+  parametres_paiement: 'id',
+  transactions_paiement: 'id',
+  webhooks_paiement: 'id',
+}
+
+// Parents d'abord (les enfants référencent leurs parents par FK).
+const ORDRE_UPSERT = [
+  'restaurants',
+  'utilisateurs',
+  'abonnements',
+  'paiements',
+  'fidelite',
+  'commandes_clients',
+  'transactions_paiement',
+  'webhooks_paiement',
+  'compteurs',
+  'parametres_paiement',
+]
+// Enfants d'abord (inverse : une FK parent → enfant n'est jamais violée).
+const ORDRE_SUPPRESSION = [...ORDRE_UPSERT].reverse()
+
 /**
- * Écriture ATOMIQUE : on écrit d'abord un fichier temporaire puis on le
- * déplace par-dessus le vrai fichier. Un plantage en plein écriture ne
- * peut plus laisser de JSON tronqué (le fichier principal n'est jamais
- * touché en place). Sur Windows, le remplacement peut échouer si la cible
- * existe : on supprime puis on renomme (fenêtre minuscule, le fichier
- * temporaire garantit que la donnée n'est pas perdue).
+ * Compare les états par table (ordre de lignes ignoré) et synchronise en
+ * base UNIQUEMENT les tables modifiées : upsert des lignes nouvelles/
+ * changées, suppression des lignes disparues.
+ */
+async function synchroniser(bdd: Bdd, avant: Lignes) {
+  const apres = lignesPour(bdd)
+  const modifiees: Record<string, { nouvelles: Ligne[]; avant: Ligne[] }> = {}
+
+  for (const table of Object.keys(CONFLIT_PAR_TABLE)) {
+    const anciennes = avant[table] ?? []
+    const nouvelles = apres[table] ?? []
+    if (cartesEgales(anciennes, nouvelles)) continue
+    modifiees[table] = { nouvelles, avant: anciennes }
+  }
+
+  if (Object.keys(modifiees).length === 0) return
+
+  // Upsert — parents d'abord.
+  for (const table of ORDRE_UPSERT) {
+    const mod = modifiees[table]
+    if (!mod || mod.nouvelles.length === 0) continue
+    const { error } = await supabase
+      .from(table)
+      .upsert(mod.nouvelles, { onConflict: CONFLIT_PAR_TABLE[table] })
+    if (error) erreurBdd(`écriture ${table}`, error)
+  }
+
+  // Suppressions — enfants d'abord.
+  for (const table of ORDRE_SUPPRESSION) {
+    const mod = modifiees[table]
+    if (!mod) continue
+    const idsAnciens = new Set(mod.avant.map((l) => String(l[CONFLIT_PAR_TABLE[table]])))
+    const idsNouveaux = new Set(mod.nouvelles.map((l) => String(l[CONFLIT_PAR_TABLE[table]])))
+    const supprimes = [...idsAnciens].filter((id) => !idsNouveaux.has(id))
+    if (supprimes.length === 0) continue
+    const { error } = await supabase
+      .from(table)
+      .delete()
+      .in(CONFLIT_PAR_TABLE[table], supprimes)
+    if (error) erreurBdd(`suppression ${table}`, error)
+  }
+}
+
+function cartesEgales(a: Ligne[], b: Ligne[]): boolean {
+  if (a.length !== b.length) return false
+  const aTri = [...a].sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)))
+  const bTri = [...b].sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)))
+  for (let i = 0; i < aTri.length; i++) {
+    if (JSON.stringify(aTri[i]) !== JSON.stringify(bTri[i])) return false
+  }
+  return true
+}
+
+/**
+ * Écriture complète de l'état (remplace l'ancienne écriture fichier) :
+ * synchronise TOUTES les tables depuis l'état fourni. Utilisée par
+ * `sauverBdd` (compatibilité) — `muterBdd` fait mieux (diff par table).
  */
 export async function sauverBdd(bdd: Bdd) {
-  await mkdir(path.dirname(FICHIER), { recursive: true })
-  const temporaire = `${FICHIER}.tmp`
-  await writeFile(temporaire, JSON.stringify(bdd, null, 2), 'utf-8')
-  try {
-    await rename(temporaire, FICHIER)
-  } catch (err) {
-    if (process.platform !== 'win32') throw err
-    await rm(FICHIER, { force: true })
-    await rename(temporaire, FICHIER)
-  }
-  // Write-through : les lectures suivantes du même processus voient
-  // immédiatement le nouvel état sans repasser par le disque.
+  await synchroniser(bdd, videLignes())
   versionEcritures += 1
   cache = { bdd, version: versionEcritures, chargeA: Date.now() }
 }
 
+function videLignes(): Lignes {
+  const lignes = lignesPour({
+    version: VERSION_BDD,
+    restaurants: [],
+    utilisateurs: [],
+    abonnements: [],
+    paiements: [],
+    fidelite: [],
+    commandesClients: [],
+    compteurCommandes: 0,
+    parametresPaiement: parametresPaiementParDefaut(),
+    transactionsPaiement: [],
+    webhooksPaiement: [],
+  })
+  for (const cle of Object.keys(lignes)) lignes[cle] = []
+  return lignes
+}
+
 /**
- * File d'attente des mutations : le fichier JSON n'offre pas de verrou
- * natif — deux mutations quasi simultanées (ex. deux créations de STAFF en
- * parallèle) pourraient toutes deux lire le même état puis écraser l'autre.
- * La sérialisation garantit une lecture-modification-écriture atomique.
+ * File d'attente des mutations : sérialise les mutations du processus
+ * (lecture fraîche → mutation → synchronisation), comme l'ancien verrou
+ * du fichier JSON.
  */
 let chaineEcriture: Promise<unknown> = Promise.resolve()
 
@@ -410,14 +535,17 @@ function serialiser<T>(fn: () => Promise<T>): Promise<T> {
   return suivant
 }
 
-/** Met à jour la base par mutation puis l'enregistre. */
+/** Met à jour la base par mutation puis synchronise les tables modifiées. */
 export async function muterBdd(
   fn: (bdd: Bdd) => void | Promise<void>,
 ): Promise<Bdd> {
   return serialiser(async () => {
-    const bdd = await lireBdd()
+    const bdd = await chargerBdd()
+    const avant = lignesPour(bdd)
     await fn(bdd)
-    await sauverBdd(bdd)
+    await synchroniser(bdd, avant)
+    versionEcritures += 1
+    cache = { bdd, version: versionEcritures, chargeA: Date.now() }
     return bdd
   })
 }
@@ -426,7 +554,7 @@ export async function muterBdd(
 export async function etatDuStore() {
   const bdd = await lireBdd()
   return {
-    version: bdd.version,
+    version: VERSION_BDD,
     restaurants: bdd.restaurants.length,
     utilisateurs: bdd.utilisateurs.length,
     abonnements: bdd.abonnements.length,
@@ -445,12 +573,11 @@ export async function etatDuStore() {
  * - l'enregistrement d'abonnement fait foi (`palier` écrit lors du
  *   renouvellement / de l'inscription) — anti-escalade : jamais de valeur
  *   envoyée par le client ;
- * - abonnement absent ou `palier` absent (comptes antérieurs à la Phase 4)
- *   → défaut à la lecture, SANS AUCUNE ÉCRITURE DISQUE (une vérification
- *   reste une lecture pure) ;
+ * - abonnement absent ou `palier` absent → défaut à la lecture, sans
+ *   écriture (une vérification reste une lecture pure) ;
  * - fail-closed : défaut Starter, sauf exception démo explicite
  *   (chef@chezfatou.sn → Pro, cohérent avec ses 2 comptes STAFF déjà
- *   actifs — le grandfatering doit pouvoir s'appuyer dessus sans blocage).
+ *   actifs).
  */
 export async function palierDeRestaurant(
   restaurantId: string,
@@ -587,8 +714,7 @@ export async function creerRestaurantAvecAbonnement(input: {
 /**
  * Auto-inscription depuis la vitrine : le restaurant, son compte gérant et
  * un abonnement en ESSAI GRATUIT (DUREE_ESSAI_JOURS jours, montant 0) sont
- * créés d'un seul geste. Le plan choisi sur la landing est conservé : la
- * bascule vers le payant se fait via le flux de renouvellement existant.
+ * créés d'un seul geste.
  */
 export async function creerRestaurantEnEssai(input: {
   nom: string
@@ -638,14 +764,10 @@ export async function creerRestaurantEnEssai(input: {
 
 /**
  * Crée un membre du personnel (STAFF) rattaché au restaurant de la gérante.
- * Le rôle, le restaurant et les permissions sont déterminés côté serveur :
- * jamais de champ `role` ou `permissions` accepté depuis le client.
- *
  * VERROU DE PALIER (limite STAFF) : vérifié DANS la mutation (lecture-
  * modification-écriture sérialisée — deux créations quasi simultanées ne
  * peuvent pas passer toutes les deux). Grandfathering : seuls les comptes
- * ACTIFS comptent pour la limite, et rien n'est jamais désactivé
- * rétroactivement — la limite ne s'applique qu'aux nouvelles créations.
+ * ACTIFS comptent pour la limite, rien n'est désactivé rétroactivement.
  */
 export async function creerPersonnel(input: {
   restaurantId: string
@@ -780,8 +902,7 @@ export async function lireParametresPaiement(): Promise<ParametresPaiement> {
 
 /**
  * Sauvegarde de la configuration paiement. Les clés sont stockées en dur
- * côté serveur ; un champ vide signale « garder la valeur actuelle » —
- * l'UI n'envoie jamais une clé reçue du serveur (elle n'en reçoit jamais).
+ * côté serveur ; un champ vide signale « garder la valeur actuelle ».
  */
 export async function sauverParametresPaiement(miseAJour: {
   numerosMobileMoney?: Partial<NumerosMobileMoney>
@@ -897,8 +1018,6 @@ export async function confirmerRenouvellementAutomatique(input: {
     )
     if (abonnement) {
       const jours = abonnement.plan === 'annuel' ? 365 : 30
-      // Le palier a déjà été posé sur l'abonnement au démarrage de la
-      // transaction : la confirmation ne fait qu'activer.
       abonnement.statut = 'actif'
       abonnement.dateDebut = dateIso(new Date())
       abonnement.dateFin = dateDans(jours)
@@ -967,7 +1086,13 @@ export async function suspendreAbonnement(abonnement: Abonnement) {
   })
 }
 
-/** Enregistre une commande passée par un client et crédite sa Carte de Fidélité. */
+/**
+ * Enregistre une commande passée par un client et crédite sa Carte de
+ * Fidélité. Le compteur est incrémenté de façon ATOMIQUE côté SQL
+ * (RPC `incrementer_compteur`, UPDATE ... RETURNING) : deux requêtes
+ * concurrentes reçoivent des valeurs distinctes — pas de race condition,
+ * y compris entre instances serverless.
+ */
 export async function enregistrerCommandeClient(input: {
   clientId: string
   clientNom: string
@@ -977,9 +1102,19 @@ export async function enregistrerCommandeClient(input: {
 }) {
   let ref = ''
   let pointsGagnes = 0
-  await muterBdd((bdd) => {
-    bdd.compteurCommandes += 1
-    ref = `ALB-${bdd.compteurCommandes}`
+  await muterBdd(async (bdd) => {
+    const { data: valeur, error: erreurCompteur } = await supabase.rpc(
+      'incrementer_compteur',
+      { p_cle: 'commandes' },
+    )
+    if (erreurCompteur || typeof valeur !== 'number') {
+      logger('bdd', 'erreur', 'Compteur de commandes inaccessible', {
+        detail: erreurCompteur ? erreurCompteur.message : 'valeur non numérique',
+      })
+      throw new Error('Compteur de commandes indisponible.')
+    }
+    bdd.compteurCommandes = valeur
+    ref = `ALB-${valeur}`
     bdd.commandesClients.unshift({
       id: nouveauId('c'),
       ref,

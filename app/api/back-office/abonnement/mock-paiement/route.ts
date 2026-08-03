@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   const garde = await exigerRole(req, [Role.RESTAURANT_ADMIN])
   if (!garde.ok) return garde.reponse
 
-  if (!requeteAutorisee(req, 'mock-paiement', LIMITE_SIMULATION)) {
+  if (!(await requeteAutorisee(req, 'mock-paiement', LIMITE_SIMULATION))) {
     return reponseTropDeRequetes(
       'Trop de demandes. Réessaie dans une minute.',
     )

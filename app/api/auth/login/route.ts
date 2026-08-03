@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
       ? corps.suivant
       : null
 
-  if (!requeteAutorisee(req, `login:${email.toLowerCase()}`, LIMITE_LOGIN)) {
+  if (!(await requeteAutorisee(req, `login:${email.toLowerCase()}`, LIMITE_LOGIN))) {
     logger('auth', 'warn', 'Trop de tentatives de connexion', { email })
     return reponseTropDeRequetes(
       'Trop de tentatives. Réessaie dans une minute.',

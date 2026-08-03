@@ -16,7 +16,7 @@ const LIMITE_WEBHOOK = { fenetreMs: 60_000, max: 60 }
  * traitement — signature invalide → 401, rien ne bouge.
  */
 export async function POST(req: NextRequest) {
-  if (!requeteAutorisee(req, 'webhook', LIMITE_WEBHOOK)) {
+  if (!(await requeteAutorisee(req, 'webhook', LIMITE_WEBHOOK))) {
     return reponseTropDeRequetes('Trop de notifications.')
   }
   const corpsBrut = await req.text()

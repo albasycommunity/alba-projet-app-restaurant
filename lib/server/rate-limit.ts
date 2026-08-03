@@ -1,22 +1,21 @@
 /**
- * Limiteur de débit en mémoire (fenêtre glissante par clé).
+ * Limiteur de débit en base de données (fenêtre fixe par clé).
+ *
+ * Remplace l'ancienne Map en mémoire : sur plusieurs instances serverless,
+ * chaque instance avait son propre compteur et la limite devenait
+ * inefficace. Chaque clé (IP|identifiant) est une ligne de la table
+ * `rate_limits`, incrémentée de façon ATOMIQUE côté SQL (RPC
+ * `incremente_rate_limit` — une seule UPDATE verrouille la ligne : deux
+ * requêtes simultanées ne peuvent pas doubler le compteur).
  *
  * Protège les points sensibles : connexion (bruteforce), inscription
- * (spam), webhook et initiation de paiement (abus). En mémoire = parfait
- * pour une instance unique ; sur plusieurs instances, le compteur est
- * local à chacune — acceptable en l'état, un store partagé (Redis) est le
- * remplacement naturel quand on sortira du mono-instance.
+ * (spam), webhook et initiation de paiement (abus).
  */
 
 import 'server-only'
 import type { NextRequest } from 'next/server'
-
-type Fenetre = {
-  compte: number
-  reinitialiseA: number
-}
-
-const fenetres = new Map<string, Fenetre>()
+import { logger } from '@/lib/server/logger'
+import { supabase } from '@/lib/server/supabase'
 
 export type OptionsLimitation = {
   /** Largeur de la fenêtre (ms). */
@@ -29,34 +28,40 @@ export type OptionsLimitation = {
  * Retourne `true` si la requête est autorisée, `false` si elle dépasse
  * le quota. La clé combine l'IP (premier hop de X-Forwarded-For, posé par
  * le proxy/reverse) et l'identifiant métier (email, route).
+ *
+ * En cas d'erreur Supabase (base injoignable, RPC indisponible), la
+ * requête est AUTORISÉE (fail-open) : le rate-limiting est un pare-feu
+ * de confort — il ne doit jamais bloquer l'app quand l'infra est déjà en
+ * panne — mais l'erreur est loggée pour l'observabilité.
  */
-export function requeteAutorisee(
+export async function requeteAutorisee(
   req: NextRequest,
   identifiant: string,
   { fenetreMs, max }: OptionsLimitation,
-): boolean {
-  const maintenant = Date.now()
+): Promise<boolean> {
   const ip =
     req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
     'anonyme'
   const cle = `${ip}|${identifiant}`
 
-  let fenetre = fenetres.get(cle)
-  if (!fenetre || maintenant - fenetre.reinitialiseA >= fenetreMs) {
-    fenetre = { compte: 0, reinitialiseA: maintenant }
-    fenetres.set(cle, fenetre)
+  const { data, error } = await supabase.rpc('incremente_rate_limit', {
+    p_cle: cle,
+    p_fenetre_ms: fenetreMs,
+    p_max: max,
+  })
+  if (error) {
+    const detail =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'message' in error
+          ? String((error as { message: unknown }).message)
+          : String(error)
+    logger('rate-limit', 'warn', 'Rate-limit inaccessible — requête autorisée', {
+      detail,
+    })
+    return true
   }
-  fenetre.compte += 1
-
-  // Entretien : on purge les fenêtres mortes pour ne pas faire grossir la
-  // table sans limite (bornes basses, mémoire négligeable).
-  if (fenetres.size > 10_000) {
-    for (const [k, v] of fenetres) {
-      if (maintenant - v.reinitialiseA >= fenetreMs) fenetres.delete(k)
-    }
-  }
-
-  return fenetre.compte <= max
+  return data === 1
 }
 
 /** Réponse standard 429. */

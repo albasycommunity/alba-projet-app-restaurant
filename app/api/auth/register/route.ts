@@ -26,7 +26,7 @@ const EMAIL_VALIDE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export async function POST(req: NextRequest) {
   const corps = await req.json().catch(() => null)
 
-  if (!requeteAutorisee(req, 'register', LIMITE_INSCRIPTION)) {
+  if (!(await requeteAutorisee(req, 'register', LIMITE_INSCRIPTION))) {
     logger('auth', 'warn', 'Trop d’inscriptions')
     return reponseTropDeRequetes(
       'Trop d’inscriptions depuis cette adresse. Réessaie plus tard.',
