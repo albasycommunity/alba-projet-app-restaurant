@@ -4,6 +4,7 @@ import {
   abonnementDeRestaurant,
   lireBdd,
   lireParametresPaiement,
+  palierDeRestaurant,
 } from '@/lib/server/bdd'
 import { exigerRole } from '@/lib/server/auth'
 import {
@@ -53,6 +54,9 @@ export async function GET(req: NextRequest) {
     abonnement: {
       id: abonnement.id,
       plan: abonnement.plan,
+      // Palier EFFECTIF (relu du store, jamais du client) : c'est lui qui
+      // pilote les verrous (modules Pro, limite STAFF, multi-établissements).
+      palier: await palierDeRestaurant(utilisateur.restaurantId),
       statut: abonnement.statut,
       dateDebut: abonnement.dateDebut,
       dateFin: abonnement.dateFin,

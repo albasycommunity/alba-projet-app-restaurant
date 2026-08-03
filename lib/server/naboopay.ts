@@ -19,8 +19,14 @@
 
 import 'server-only'
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import type { Utilisateur } from '@/lib/auth'
-import type { ParametresPaiement, PlanAbonnement } from '@/lib/auth'
+import { LIBELLE_PALIER } from '@/lib/auth'
+import { logger } from '@/lib/server/logger'
+import type {
+  PalierAbonnement,
+  ParametresPaiement,
+  PlanAbonnement,
+  Utilisateur,
+} from '@/lib/auth'
 import {
   annulerRenouvellementAutomatique,
   confirmerRenouvellementAutomatique,
@@ -116,6 +122,7 @@ export type TransactionCreee = {
  */
 export async function creerTransactionNabooPay(input: {
   plan: PlanAbonnement
+  palier: PalierAbonnement
   montant: number
   utilisateur: Utilisateur
   restaurantNom: string
@@ -135,10 +142,10 @@ export async function creerTransactionNabooPay(input: {
     method_of_payment: ['wave', 'orange_money'],
     products: [
       {
-        name: `Abonnement ${input.plan === 'annuel' ? 'annuel' : 'mensuel'} — ${input.restaurantNom}`,
+        name: `Abonnement ${LIBELLE_PALIER[input.palier]} ${input.plan === 'annuel' ? 'annuel' : 'mensuel'} — ${input.restaurantNom}`,
         price: input.montant,
         quantity: 1,
-        description: `Abonnement ${input.plan} de ${input.restaurantNom}`,
+        description: `Abonnement ${LIBELLE_PALIER[input.palier]} (${input.plan}) de ${input.restaurantNom}`,
       },
     ],
     customer: {
@@ -276,6 +283,7 @@ export async function traiterWebhookNabooPay(input: {
   const secret = secretWebhookEffectif(parametres)
 
   const rejeter = async (detail: string, status = 401) => {
+    logger('naboopay', 'warn', 'Webhook rejeté', { detail, status })
     await journaliserWebhook({
       signatureValide: false,
       statut: 'rejete',

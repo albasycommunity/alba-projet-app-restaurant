@@ -9,13 +9,14 @@ import {
   WalletIcon,
 } from 'lucide-react'
 import { Badge, Card, CardTitle, EmptyState, PageHeader, Progress, StatTile } from '@/components/kit'
-import { LIBELLES_STATUT, PLANS_ABONNEMENT } from '@/lib/auth'
+import { LIBELLES_STATUT, PLANS_ABONNEMENT, montantPalier } from '@/lib/auth'
 import { fcfa } from '@/lib/data'
 
 type DonneesAbonnement = {
   abonnement: {
     id: string
     plan: 'mensuel' | 'annuel'
+    palier: 'starter' | 'pro' | 'premium'
     statut: 'actif' | 'essai' | 'expire' | 'en_attente'
     dateDebut: string
     dateFin: string
@@ -101,8 +102,8 @@ export default function PageAbonnement() {
               />
               <StatTile
                 libelle="Plan"
-                valeur={PLANS_ABONNEMENT[abonnement.plan].libelle}
-                detail={fcfa(abonnement.montant) + ' · ' + PLANS_ABONNEMENT[abonnement.plan].detail}
+                valeur={`${PLANS_ABONNEMENT[abonnement.palier].libelle} · ${abonnement.plan}`}
+                detail={`${fcfa(montantPalier(abonnement.palier, abonnement.plan))} · ${PLANS_ABONNEMENT[abonnement.palier].detail}`}
                 icone={<WalletIcon className="size-3.5" />}
               />
               <StatTile
@@ -128,8 +129,8 @@ export default function PageAbonnement() {
                   <Progress valeur={Math.max(0, (abonnement.joursRestants / 15) * 100)} ton="primaire" />
                   <p className="text-xs text-muted-foreground">
                     {abonnement.joursRestants <= 7
-                      ? `L'essai se termine bientôt. Choisis ton plan payant (${PLANS_ABONNEMENT[abonnement.plan].libelle.toLowerCase()}) pour continuer sans interruption.`
-                      : `Profite de tout le back-office pendant ton essai. À l'échéance, passe au plan ${PLANS_ABONNEMENT[abonnement.plan].libelle.toLowerCase()} pour continuer.`}
+                      ? `L'essai se termine bientôt. Choisis ton plan payant (${PLANS_ABONNEMENT[abonnement.palier].libelle.toLowerCase()}) pour continuer sans interruption.`
+                      : `Profite de tout le back-office pendant ton essai. À l'échéance, passe au plan ${PLANS_ABONNEMENT[abonnement.palier].libelle.toLowerCase()} pour continuer.`}
                   </p>
                 </div>
                 <Link

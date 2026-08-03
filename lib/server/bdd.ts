@@ -9,17 +9,20 @@
  */
 
 import 'server-only'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { hashSync } from 'bcryptjs'
 import {
   DUREE_ESSAI_JOURS,
   Permission,
+  PLANS_ABONNEMENT,
   Role,
   dateDans,
   dateIso,
   estAbonnementAccessible,
+  moduleAutorise,
   nouveauId,
+  palierValide,
   parametresPaiementParDefaut,
   type Abonnement,
   type CommandeClient,
@@ -27,6 +30,7 @@ import {
   type ModePaiementAbonnement,
   type NumerosMobileMoney,
   type Paiement,
+  type PalierAbonnement,
   type ParametresPaiement,
   type PlanAbonnement,
   type Restaurant,
@@ -149,29 +153,34 @@ function bddInitiale(): Bdd {
       id: 'a1',
       restaurantId: 'r1',
       plan: 'mensuel',
+      // Démo : Fatou a déjà une caissière ET un cuisinier → Pro.
+      // (Le fichier existant sans `palier` résout Pro via palierDeRestaurant.)
+      palier: 'pro',
       statut: 'actif',
       dateDebut: ilYAJours(20),
       // Expire dans ~17 jours : la bannière « bientôt l'échéance » s'affiche.
       dateFin: dateDans(17),
-      montant: 25_000,
+      montant: 35_000,
     },
     {
       id: 'a2',
       restaurantId: 'r2',
       plan: 'mensuel',
+      palier: 'starter',
       statut: 'expire',
       dateDebut: ilYAJours(55),
       dateFin: ilYAJours(5),
-      montant: 25_000,
+      montant: 15_000,
     },
     {
       id: 'a3',
       restaurantId: 'r3',
       plan: 'annuel',
+      palier: 'starter',
       statut: 'actif',
       dateDebut: ilYAJours(30),
       dateFin: dateDans(182),
-      montant: 250_000,
+      montant: 150_000,
     },
   ]
 
@@ -210,19 +219,46 @@ function bddInitiale(): Bdd {
 }
 
 /**
- * Pas de cache en mémoire : le proxy (Next 16) est bundlé séparément des
- * routes API — un cache partagé serait incohérent. Le fichier est petit
- * (quelques Ko) et le disque local est rapide : chaque lecture est fraîche.
+ * Cache mémoire — la lecture disque + JSON.parse par requête (proxy inclus,
+ * qui fait 2 à 3 lectures à chaque page) est le premier goulot de montée en
+ * charge. Le store est un fichier JSON : tant que l'on reste sur une seule
+ * instance, le cache garde la cohérence avec des règles simples :
  *
- * RÈGLE D'OR : une lecture n'écrit JAMAIS sur le disque à chaque appel.
- * Écrire dans data/ (projet surveillé par le serveur de dev) à chaque
- * requête provoquerait une réaction en chaîne (écriture → rebuild →
- * refresh du navigateur → nouvelle requête → réécriture…). Le disque
- * n'est touché QUE lorsque les données ont réellement changé :
- *   - migration de schéma (une seule écriture, puis plus rien) ;
- *   - ou (re)création du fichier, au maximum UNE fois par démarrage
- *     (garde en mémoire partagée), uniquement s'il est absent ou illisible.
+ * - Le bundle des routes API ÉCRIT : le cache y est invalidé en
+ *   write-through (toute écriture incrémente `versionEcritures` et
+ *   remplace l'objet caché). Une lecture voit donc toujours l'état le
+ *   plus récent, sans lire le disque.
+ * - Le bundle proxy (Next 16 est bundlé séparément) ne fait que LIRE :
+ *   il vit sur son propre cache, rafraîchi au plus après `ttlMs`
+ *   (configuré par le proxy via configurerCacheBdd). Staleness bornée.
+ * - `ttlMs` sert aussi de filet de sécurité entre instances distinctes
+ *   (PM2 cluster, plusieurs pods) : une écriture faite ailleurs est vue
+ *   au plus tard après `ttlMs`.
+ *
+ * RÈGLE D'OR conservée : une lecture n'écrit JAMAIS sur le disque à
+ * chaque appel. Le disque n'est touché QUE lorsque les données ont
+ * réellement changé (migration une fois, seed une fois par processus).
  */
+type CacheBdd = {
+  bdd: Bdd
+  version: number
+  chargeA: number
+}
+
+let cache: CacheBdd | null = null
+let chargementEnCours: Promise<Bdd> | null = null
+/** Incrémenté à chaque écriture réussie (write-through du bundle routes). */
+let versionEcritures = 0
+/** Routes : fraîcheur immédiate. Proxy : TTL court. */
+let ttlCacheMs = 1_000
+
+/** Fixe la durée de vie du cache (appelé par le proxy, bundle lecture seule). */
+export function configurerCacheBdd({ ttlMs }: { ttlMs: number }) {
+  if (ttlMs >= 0) ttlCacheMs = ttlMs
+  cache = null
+}
+
+/** Créé au maximum UNE fois par processus (seed du fichier absent/corrompu). */
 let fichierReinitialiseCeProcessus = false
 
 async function seedMemoire(): Promise<Bdd> {
@@ -238,7 +274,7 @@ async function seedMemoire(): Promise<Bdd> {
   return initiale
 }
 
-export async function lireBdd(): Promise<Bdd> {
+async function chargerDepuisDisque(): Promise<Bdd> {
   let brut: string
   try {
     brut = await readFile(FICHIER, 'utf-8')
@@ -268,6 +304,22 @@ export async function lireBdd(): Promise<Bdd> {
     })
   }
   return normalisee
+}
+
+export async function lireBdd(): Promise<Bdd> {
+  if (cache) {
+    const coherent = cache.version === versionEcritures
+    const dansTtl = Date.now() - cache.chargeA < ttlCacheMs
+    if (coherent && dansTtl) return cache.bdd
+  }
+  if (!chargementEnCours) {
+    chargementEnCours = chargerDepuisDisque().finally(() => {
+      chargementEnCours = null
+    })
+  }
+  const bdd = await chargementEnCours
+  cache = { bdd, version: versionEcritures, chargeA: Date.now() }
+  return bdd
 }
 
 /**
@@ -319,22 +371,120 @@ function normaliserBdd(bdd: Bdd): Bdd {
   }
 }
 
+/**
+ * Écriture ATOMIQUE : on écrit d'abord un fichier temporaire puis on le
+ * déplace par-dessus le vrai fichier. Un plantage en plein écriture ne
+ * peut plus laisser de JSON tronqué (le fichier principal n'est jamais
+ * touché en place). Sur Windows, le remplacement peut échouer si la cible
+ * existe : on supprime puis on renomme (fenêtre minuscule, le fichier
+ * temporaire garantit que la donnée n'est pas perdue).
+ */
 export async function sauverBdd(bdd: Bdd) {
   await mkdir(path.dirname(FICHIER), { recursive: true })
-  await writeFile(FICHIER, JSON.stringify(bdd, null, 2), 'utf-8')
+  const temporaire = `${FICHIER}.tmp`
+  await writeFile(temporaire, JSON.stringify(bdd, null, 2), 'utf-8')
+  try {
+    await rename(temporaire, FICHIER)
+  } catch (err) {
+    if (process.platform !== 'win32') throw err
+    await rm(FICHIER, { force: true })
+    await rename(temporaire, FICHIER)
+  }
+  // Write-through : les lectures suivantes du même processus voient
+  // immédiatement le nouvel état sans repasser par le disque.
+  versionEcritures += 1
+  cache = { bdd, version: versionEcritures, chargeA: Date.now() }
+}
+
+/**
+ * File d'attente des mutations : le fichier JSON n'offre pas de verrou
+ * natif — deux mutations quasi simultanées (ex. deux créations de STAFF en
+ * parallèle) pourraient toutes deux lire le même état puis écraser l'autre.
+ * La sérialisation garantit une lecture-modification-écriture atomique.
+ */
+let chaineEcriture: Promise<unknown> = Promise.resolve()
+
+function serialiser<T>(fn: () => Promise<T>): Promise<T> {
+  const suivant = chaineEcriture.then(fn, fn)
+  chaineEcriture = suivant.catch(() => undefined)
+  return suivant
 }
 
 /** Met à jour la base par mutation puis l'enregistre. */
 export async function muterBdd(
   fn: (bdd: Bdd) => void | Promise<void>,
 ): Promise<Bdd> {
+  return serialiser(async () => {
+    const bdd = await lireBdd()
+    await fn(bdd)
+    await sauverBdd(bdd)
+    return bdd
+  })
+}
+
+/** Métadonnées du store, pour le point de santé / observabilité. */
+export async function etatDuStore() {
   const bdd = await lireBdd()
-  await fn(bdd)
-  await sauverBdd(bdd)
-  return bdd
+  return {
+    version: bdd.version,
+    restaurants: bdd.restaurants.length,
+    utilisateurs: bdd.utilisateurs.length,
+    abonnements: bdd.abonnements.length,
+    enCache: cache !== null,
+    ttlCacheMs,
+  }
 }
 
 /* ------------------------------- lectures --------------------------------- */
+
+/**
+ * Palier commercial EFFECTIF d'un restaurant — SOURCE UNIQUE DE VÉRITÉ,
+ * relue à chaque requête sensible (jamais mis en cache dans le JWT).
+ *
+ * Règles :
+ * - l'enregistrement d'abonnement fait foi (`palier` écrit lors du
+ *   renouvellement / de l'inscription) — anti-escalade : jamais de valeur
+ *   envoyée par le client ;
+ * - abonnement absent ou `palier` absent (comptes antérieurs à la Phase 4)
+ *   → défaut à la lecture, SANS AUCUNE ÉCRITURE DISQUE (une vérification
+ *   reste une lecture pure) ;
+ * - fail-closed : défaut Starter, sauf exception démo explicite
+ *   (chef@chezfatou.sn → Pro, cohérent avec ses 2 comptes STAFF déjà
+ *   actifs — le grandfatering doit pouvoir s'appuyer dessus sans blocage).
+ */
+export async function palierDeRestaurant(
+  restaurantId: string,
+): Promise<PalierAbonnement> {
+  const bdd = await lireBdd()
+  return palierEffectifBdd(bdd, restaurantId)
+}
+
+function palierEffectifBdd(
+  bdd: Bdd,
+  restaurantId: string,
+): PalierAbonnement {
+  const abonnement = bdd.abonnements
+    .filter((a) => a.restaurantId === restaurantId)
+    .sort((a, b) => b.dateFin.localeCompare(a.dateFin))[0]
+  if (!abonnement) return 'starter'
+  if (palierValide(abonnement.palier)) return abonnement.palier
+  const admin = bdd.utilisateurs.find(
+    (u) =>
+      u.role === Role.RESTAURANT_ADMIN && u.restaurantId === restaurantId,
+  )
+  if (admin?.email === EMAIL_DEMO_PRO) return 'pro'
+  return 'starter'
+}
+
+const EMAIL_DEMO_PRO = 'chef@chezfatou.sn'
+
+/** Un module (permission) est-il couvert par le palier du restaurant ? (lecture pure) */
+export async function moduleAutoriseRestaurant(
+  restaurantId: string,
+  permission: Permission,
+): Promise<boolean> {
+  return moduleAutorise(await palierDeRestaurant(restaurantId), permission)
+}
 
 export async function trouverUtilisateurParEmail(email: string) {
   const bdd = await lireBdd()
@@ -394,6 +544,7 @@ export async function creerRestaurantAvecAbonnement(input: {
   email: string
   motDePasse: string
   plan: PlanAbonnement
+  palier: PalierAbonnement
   montant: number
 }) {
   const maintenant = new Date()
@@ -421,6 +572,7 @@ export async function creerRestaurantAvecAbonnement(input: {
       id: nouveauId('a'),
       restaurantId: restaurant.id,
       plan: input.plan,
+      palier: input.palier,
       statut: 'actif',
       dateDebut: dateIso(maintenant),
       dateFin: dateDans(input.plan === 'annuel' ? 365 : 30),
@@ -445,6 +597,7 @@ export async function creerRestaurantEnEssai(input: {
   email: string
   motDePasse: string
   plan: PlanAbonnement
+  palier: PalierAbonnement
 }) {
   const maintenant = new Date()
   return muterBdd((bdd) => {
@@ -471,6 +624,7 @@ export async function creerRestaurantEnEssai(input: {
       id: nouveauId('a'),
       restaurantId: restaurant.id,
       plan: input.plan,
+      palier: input.palier,
       statut: 'essai',
       dateDebut: dateIso(maintenant),
       dateFin: dateDans(DUREE_ESSAI_JOURS),
@@ -486,6 +640,12 @@ export async function creerRestaurantEnEssai(input: {
  * Crée un membre du personnel (STAFF) rattaché au restaurant de la gérante.
  * Le rôle, le restaurant et les permissions sont déterminés côté serveur :
  * jamais de champ `role` ou `permissions` accepté depuis le client.
+ *
+ * VERROU DE PALIER (limite STAFF) : vérifié DANS la mutation (lecture-
+ * modification-écriture sérialisée — deux créations quasi simultanées ne
+ * peuvent pas passer toutes les deux). Grandfathering : seuls les comptes
+ * ACTIFS comptent pour la limite, et rien n'est jamais désactivé
+ * rétroactivement — la limite ne s'applique qu'aux nouvelles créations.
  */
 export async function creerPersonnel(input: {
   restaurantId: string
@@ -493,11 +653,26 @@ export async function creerPersonnel(input: {
   email: string
   motDePasse: string
   permissions: Permission[]
-}) {
-  const maintenant = new Date()
-  return muterBdd((bdd) => {
+}): Promise<{ ok: true; id: string } | { ok: false; raison: 'limite-staff' }> {
+  let resultat: { ok: true; id: string } | { ok: false; raison: 'limite-staff' } = {
+    ok: false,
+    raison: 'limite-staff',
+  }
+  await muterBdd((bdd) => {
+    const palier = palierEffectifBdd(bdd, input.restaurantId)
+    const limite = PLANS_ABONNEMENT[palier].verrous.limiteStaff
+    if (limite !== null) {
+      const actifs = bdd.utilisateurs.filter(
+        (u) =>
+          u.role === Role.STAFF &&
+          u.restaurantId === input.restaurantId &&
+          u.actif,
+      ).length
+      if (actifs >= limite) return
+    }
+    const id = nouveauId('u')
     bdd.utilisateurs.push({
-      id: nouveauId('u'),
+      id,
       email: input.email.trim().toLowerCase(),
       password_hash: hashSync(input.motDePasse, 10),
       nom: input.nom.trim(),
@@ -505,9 +680,11 @@ export async function creerPersonnel(input: {
       restaurantId: input.restaurantId,
       actif: true,
       permissions: input.permissions,
-      creeLe: dateIso(maintenant),
+      creeLe: dateIso(new Date()),
     })
+    resultat = { ok: true, id }
   })
+  return resultat
 }
 
 /**
@@ -554,6 +731,7 @@ function genereMotDePasse() {
 export async function demanderRenouvellement(input: {
   abonnement: Abonnement
   plan: PlanAbonnement
+  palier: PalierAbonnement
   mode: ModePaiementAbonnement
   montant: number
 }) {
@@ -561,6 +739,7 @@ export async function demanderRenouvellement(input: {
     const cible = bdd.abonnements.find((a) => a.id === input.abonnement.id)
     if (cible) {
       cible.plan = input.plan
+      cible.palier = input.palier
       cible.montant = input.montant
       cible.statut = 'en_attente'
     }
@@ -639,6 +818,7 @@ export async function enregistrerTransactionPaiement(input: {
   abonnement: Abonnement
   restaurantId: string
   plan: PlanAbonnement
+  palier: PalierAbonnement
   montant: number
 }) {
   await muterBdd((bdd) => {
@@ -649,6 +829,7 @@ export async function enregistrerTransactionPaiement(input: {
       abonnementId: input.abonnement.id,
       restaurantId: input.restaurantId,
       plan: input.plan,
+      palier: input.palier,
       montant: input.montant,
       statut: 'pending',
       creeLe: dateIso(new Date()),
@@ -671,12 +852,14 @@ export async function trouverTransactionPaiementParOrderId(orderId: string) {
 export async function demarrerRenouvellementAutomatique(input: {
   abonnement: Abonnement
   plan: PlanAbonnement
+  palier: PalierAbonnement
   montant: number
 }) {
   await muterBdd((bdd) => {
     const cible = bdd.abonnements.find((a) => a.id === input.abonnement.id)
     if (cible) {
       cible.plan = input.plan
+      cible.palier = input.palier
       cible.montant = input.montant
       cible.statut = 'en_attente'
     }
@@ -714,6 +897,8 @@ export async function confirmerRenouvellementAutomatique(input: {
     )
     if (abonnement) {
       const jours = abonnement.plan === 'annuel' ? 365 : 30
+      // Le palier a déjà été posé sur l'abonnement au démarrage de la
+      // transaction : la confirmation ne fait qu'activer.
       abonnement.statut = 'actif'
       abonnement.dateDebut = dateIso(new Date())
       abonnement.dateFin = dateDans(jours)

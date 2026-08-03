@@ -91,7 +91,13 @@ export function MenuProvider({ children }: { children: React.ReactNode }) {
             categorie: input.categorie,
             foodCost: 30,
             vendusJour: 0,
-            preparation: input.preparation ?? 8,
+            // Jamais de plat sans temps de préparation (0 min = invalide) :
+            // repli sur 8 min si la valeur arrive vide ou absurde.
+            preparation:
+              Number.isFinite(input.preparation) &&
+              (input.preparation ?? 0) >= 1
+                ? Math.round(input.preparation!)
+                : 8,
             recette: [],
             actif: true,
             rupture: false,

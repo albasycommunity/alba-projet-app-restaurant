@@ -118,13 +118,29 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  await creerPersonnel({
+  const creation = await creerPersonnel({
     restaurantId,
     nom,
     email,
     motDePasse,
     permissions,
   })
+
+  // VERROU DE PALIER : la limite de STAFF actifs est refusée à l'écriture
+  // (grandfathering : rien n'est désactivé, seules les nouvelles créations
+  // sont bloquées). L'UI redirige vers la mise à niveau avec la raison.
+  if (!creation.ok && creation.raison === 'limite-staff') {
+    return NextResponse.json(
+      {
+        ok: false,
+        erreur:
+          'Ton abonnement Starter inclut 1 membre du personnel. Passe au plan Pro pour une équipe illimitée.',
+        raison: 'limite-staff',
+        planRequis: 'pro',
+      },
+      { status: 403 },
+    )
+  }
 
   return NextResponse.json(
     { ok: true, message: `${nom} a rejoint l'équipe.` },

@@ -26,12 +26,16 @@ import {
 } from '@/components/kit'
 import {
   LIBELLES_STATUT,
+  PALIERS_ABONNEMENT,
   PLANS_ABONNEMENT,
   Role,
+  montantPalier,
+  type PalierAbonnement,
   type PlanAbonnement,
   type StatutAbonnement,
 } from '@/lib/auth'
 import { fcfa } from '@/lib/data'
+import { LogoMark } from '@/components/landing/logo'
 
 type AbonnementVue = {
   id: string
@@ -168,7 +172,12 @@ export default function PageSuperAdmin() {
   return (
     <div className="flex flex-col">
       <PageHeader
-        titre="Super admin"
+        titre={
+          <span className="flex items-center gap-3">
+            <LogoMark className="size-10" />
+            Super admin
+          </span>
+        }
         sous="Vue globale de la plateforme : abonnements, restaurants inscrits et comptes des chefs."
       />
 
@@ -537,6 +546,7 @@ function CreerRestaurant({
     email: '',
     motDePasse: '',
     plan: 'mensuel' as PlanAbonnement,
+    palier: 'starter' as PalierAbonnement,
   })
   const [envoi, setEnvoi] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
@@ -562,6 +572,7 @@ function CreerRestaurant({
         email: '',
         motDePasse: '',
         plan: 'mensuel',
+        palier: 'starter',
       })
       onCree()
     } catch {
@@ -655,7 +666,25 @@ function CreerRestaurant({
           />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground">Plan d’abonnement</span>
+          <span className="text-xs font-medium text-muted-foreground">Palier</span>
+          <select
+            value={formulaire.palier}
+            onChange={(e) =>
+              setFormulaire({ ...formulaire, palier: e.target.value as PalierAbonnement })
+            }
+            className="h-11 rounded-lg border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-primary/60 focus:ring-3 focus:ring-primary/15"
+          >
+            {PALIERS_ABONNEMENT.map((p) => (
+              <option key={p} value={p}>
+                {PLANS_ABONNEMENT[p].libelle} —{' '}
+                {fcfa(montantPalier(p, 'mensuel'))}/mois ·{' '}
+                {fcfa(montantPalier(p, 'annuel'))}/an
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted-foreground">Périodicité</span>
           <select
             value={formulaire.plan}
             onChange={(e) =>
@@ -663,11 +692,8 @@ function CreerRestaurant({
             }
             className="h-11 rounded-lg border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-primary/60 focus:ring-3 focus:ring-primary/15"
           >
-            {(Object.keys(PLANS_ABONNEMENT) as PlanAbonnement[]).map((p) => (
-              <option key={p} value={p}>
-                {PLANS_ABONNEMENT[p].libelle} — {fcfa(PLANS_ABONNEMENT[p].montant)}
-              </option>
-            ))}
+            <option value="mensuel">Mensuel — {fcfa(montantPalier(formulaire.palier, 'mensuel'))}</option>
+            <option value="annuel">Annuel — {fcfa(montantPalier(formulaire.palier, 'annuel'))} (2 mois offerts)</option>
           </select>
         </label>
       </div>

@@ -6,6 +6,7 @@ import {
   trouverTransactionPaiementParOrderId,
 } from '@/lib/server/bdd'
 import { exigerRole } from '@/lib/server/auth'
+import { reponseTropDeRequetes, requeteAutorisee } from '@/lib/server/rate-limit'
 import {
   NABOOPAY_MOCK,
   SECRET_WEBHOOK_SIMULATION,
@@ -13,6 +14,9 @@ import {
 } from '@/lib/server/naboopay'
 
 export const dynamic = 'force-dynamic'
+
+/** Simulation de paiement : 10 / minute par IP — route payante. */
+const LIMITE_SIMULATION = { fenetreMs: 60_000, max: 10 }
 
 /**
  * Mode simulation uniquement (NABOOPAY_MOCK=mock, jamais en production) :
@@ -33,6 +37,12 @@ export async function POST(req: NextRequest) {
 
   const garde = await exigerRole(req, [Role.RESTAURANT_ADMIN])
   if (!garde.ok) return garde.reponse
+
+  if (!requeteAutorisee(req, 'mock-paiement', LIMITE_SIMULATION)) {
+    return reponseTropDeRequetes(
+      'Trop de demandes. Réessaie dans une minute.',
+    )
+  }
 
   const corps = await req.json().catch(() => null)
   const orderId = typeof corps?.orderId === 'string' ? corps.orderId : ''

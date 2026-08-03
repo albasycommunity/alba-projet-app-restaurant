@@ -12,7 +12,7 @@ import {
   StoreIcon,
   HeartIcon,
 } from 'lucide-react'
-import { PLANS_ABONNEMENT, DUREE_ESSAI_JOURS, type PlanAbonnement } from '@/lib/auth'
+import { PLANS_ABONNEMENT, PALIERS_ABONNEMENT, DUREE_ESSAI_JOURS, type PalierAbonnement, type PlanAbonnement } from '@/lib/auth'
 import { LogoMark } from '@/components/landing/logo'
 import { cn } from '@/lib/utils'
 
@@ -28,9 +28,16 @@ function PageInscription() {
   const router = useRouter()
   const params = useSearchParams()
   const suivant = params.get('suivant')
-  const planInitial = params.get('plan') === 'annuel' ? 'annuel' : params.get('plan') === 'mensuel' ? 'mensuel' : null
+  const palierParam = params.get('palier')
+  const palierInitial: PalierAbonnement | null =
+    palierParam === 'pro' || palierParam === 'premium' || palierParam === 'starter'
+      ? palierParam
+      : null
+  const planInitial: PlanAbonnement | null =
+    params.get('plan') === 'annuel' ? 'annuel' : params.get('plan') === 'mensuel' ? 'mensuel' : null
 
-  const [mode, setMode] = useState<Mode>(planInitial ? 'restaurant' : 'client')
+  const [mode, setMode] = useState<Mode>(palierInitial ? 'restaurant' : 'client')
+  const [palier, setPalier] = useState<PalierAbonnement>(palierInitial ?? 'starter')
   const [plan, setPlan] = useState<PlanAbonnement>(planInitial ?? 'mensuel')
   const [nom, setNom] = useState('')
   const [email, setEmail] = useState('')
@@ -52,7 +59,7 @@ function PageInscription() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           mode === 'restaurant'
-            ? { nom, email, motDePasse, plan, nomRestaurant, quartier }
+            ? { nom, email, motDePasse, plan, palier, nomRestaurant, quartier }
             : { nom, email, motDePasse },
         ),
       })
@@ -172,46 +179,81 @@ function PageInscription() {
               <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                 Ton plan
               </span>
-              <div className="mt-1.5 grid grid-cols-2 gap-2">
-                {(Object.keys(PLANS_ABONNEMENT) as PlanAbonnement[]).map((p) => {
+              <div className="mt-1.5 flex flex-col gap-2">
+                {PALIERS_ABONNEMENT.map((p) => {
                   const offre = PLANS_ABONNEMENT[p]
-                  const actif = plan === p
+                  const actif = palier === p
                   return (
                     <button
                       key={p}
                       type="button"
-                      onClick={() => setPlan(p)}
+                      onClick={() => setPalier(p)}
                       className={cn(
-                        'flex flex-col gap-1 rounded-xl border p-3.5 text-left transition-all duration-300 ease-[var(--ease-spring)]',
+                        'flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all duration-300 ease-[var(--ease-spring)]',
                         actif
                           ? 'border-primary/50 bg-primary/10'
                           : 'border-border bg-background hover:border-primary/30',
                       )}
                     >
-                      <span className="flex items-center justify-between text-sm font-semibold">
-                        {offre.libelle}
-                        <span
-                          className={cn(
-                            'flex size-4.5 items-center justify-center rounded-full border-2',
-                            actif ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="flex items-center gap-1.5 text-sm font-semibold">
+                          {offre.libelle}
+                          {p === 'pro' && (
+                            <span className="rounded-full bg-primary px-2 py-0.5 text-[9px] font-semibold text-primary-foreground">
+                              populaire
+                            </span>
                           )}
-                        >
-                          {actif && <CheckIcon className="size-3" />}
+                        </span>
+                        <span className="font-display mt-0.5 text-lg font-semibold tracking-tight tnum">
+                          {fcfa(offre.periodicites[plan].montant)}
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {plan === 'mensuel' ? '/mois' : '/an'}
+                          </span>
                         </span>
                       </span>
-                      <span className="font-display text-lg font-semibold tracking-tight tnum">
-                        {fcfa(offre.montant)}
-                        <span className="text-xs font-normal text-muted-foreground">
-                          {p === 'mensuel' ? '/mois' : '/an'}
-                        </span>
+                      <span className="flex items-center gap-1.5">
+                        {(['mensuel', 'annuel'] as PlanAbonnement[]).map((per) => (
+                          <span
+                            key={per}
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPlan(per)
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.stopPropagation()
+                                setPlan(per)
+                              }
+                            }}
+                            className={cn(
+                              'rounded-lg px-2 py-1 text-[10px] font-medium transition-colors',
+                              actif && plan === per
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-secondary/70 text-muted-foreground hover:text-foreground',
+                            )}
+                          >
+                            {per === 'mensuel' ? 'Mensuel' : 'Annuel'}
+                          </span>
+                        ))}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {DUREE_ESSAI_JOURS} jours d'essai gratuit
+                      <span
+                        className={cn(
+                          'flex size-4.5 items-center justify-center rounded-full border-2',
+                          actif ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+                        )}
+                      >
+                        {actif && <CheckIcon className="size-3" />}
                       </span>
                     </button>
                   )
                 })}
               </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {PLANS_ABONNEMENT[palier].detail} · {DUREE_ESSAI_JOURS} jours
+                d'essai gratuit sur le plan {PLANS_ABONNEMENT[palier].libelle}.
+              </p>
             </div>
           )}
 

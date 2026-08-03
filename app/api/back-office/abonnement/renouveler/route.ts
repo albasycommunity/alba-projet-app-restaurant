@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   MODES_PAIEMENT_ABONNEMENT,
-  PLANS_ABONNEMENT,
+  montantPalier,
+  palierValide,
   Role,
   type ModePaiementAbonnement,
+  type PalierAbonnement,
   type PlanAbonnement,
 } from '@/lib/auth'
 import {
@@ -15,8 +17,12 @@ import {
 } from '@/lib/server/bdd'
 import { exigerRole } from '@/lib/server/auth'
 import { creerTransactionNabooPay } from '@/lib/server/naboopay'
+import { reponseTropDeRequetes, requeteAutorisee } from '@/lib/server/rate-limit'
 
 export const dynamic = 'force-dynamic'
+
+/** Initiation de paiement : 5 demandes / minute par IP — freine l'abus. */
+const LIMITE_RENOUVELLEMENT = { fenetreMs: 60_000, max: 5 }
 
 /**
  * Deux flux selon le choix du restaurant :
@@ -31,6 +37,12 @@ export async function POST(req: NextRequest) {
   const garde = await exigerRole(req, [Role.RESTAURANT_ADMIN])
   if (!garde.ok) return garde.reponse
 
+  if (!requeteAutorisee(req, 'renouveler', LIMITE_RENOUVELLEMENT)) {
+    return reponseTropDeRequetes(
+      'Trop de demandes. Réessaie dans une minute.',
+    )
+  }
+
   const { utilisateur } = garde
   if (!utilisateur.restaurantId) {
     return NextResponse.json(
@@ -42,6 +54,12 @@ export async function POST(req: NextRequest) {
   const corps = await req.json().catch(() => null)
   const plan: PlanAbonnement =
     corps?.plan === 'annuel' ? 'annuel' : 'mensuel'
+  // Anti-escalade : le palier choisi est VALIDÉ par le serveur (fail-closed
+  // → Starter), et le prix est TOUJOURS recalculé côté serveur à partir de
+  // PLANS_ABONNEMENT — jamais de montant envoyé par le client.
+  const palier: PalierAbonnement = palierValide(corps?.palier)
+    ? corps.palier
+    : 'starter'
   const mode = corps?.mode as ModePaiementAbonnement | undefined
   const naboopay = corps?.naboopay === true
 
@@ -53,7 +71,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const montant = PLANS_ABONNEMENT[plan].montant
+  const montant = montantPalier(palier, plan)
 
   /* ------------------------- paiement automatique ------------------------- */
   if (naboopay) {
@@ -63,6 +81,7 @@ export async function POST(req: NextRequest) {
     )
     const creation = await creerTransactionNabooPay({
       plan,
+      palier,
       montant,
       utilisateur,
       restaurantNom: restaurant?.nom ?? 'Restaurant',
@@ -84,12 +103,18 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    await demarrerRenouvellementAutomatique({ abonnement, plan, montant })
+    await demarrerRenouvellementAutomatique({
+      abonnement,
+      plan,
+      palier,
+      montant,
+    })
     await enregistrerTransactionPaiement({
       orderId: creation.orderId,
       abonnement,
       restaurantId: utilisateur.restaurantId,
       plan,
+      palier,
       montant,
     })
 
@@ -113,6 +138,7 @@ export async function POST(req: NextRequest) {
   await demanderRenouvellement({
     abonnement,
     plan,
+    palier,
     mode: mode!,
     montant,
   })
@@ -123,5 +149,6 @@ export async function POST(req: NextRequest) {
       'Demande enregistrée — ton abonnement est en attente de confirmation par le super admin dès réception du paiement.',
     montant,
     mode,
+    palier,
   })
 }

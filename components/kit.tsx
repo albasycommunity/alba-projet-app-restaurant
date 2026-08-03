@@ -9,7 +9,7 @@ export function PageHeader({
   sous,
   action,
 }: {
-  titre: string
+  titre: React.ReactNode
   sous: string
   action?: React.ReactNode
 }) {

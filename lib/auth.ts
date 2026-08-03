@@ -171,6 +171,143 @@ export function destinationPour(
 export type PlanAbonnement = 'mensuel' | 'annuel'
 
 /**
+ * Paliers commerciaux. Un palier est une STRUCTURE DE VERRUS exploitable
+ * par le code (proxy, routes API, interface) — jamais du texte seul.
+ * La source de vérité du palier applicable est l'enregistrement
+ * d'abonnement côté serveur, relu à chaque requête sensible.
+ */
+export type PalierAbonnement = 'starter' | 'pro' | 'premium'
+
+export const PALIERS_ABONNEMENT: PalierAbonnement[] = [
+  'starter',
+  'pro',
+  'premium',
+]
+
+/** Libellés français des paliers, pour l'affichage. */
+export const LIBELLE_PALIER: Record<PalierAbonnement, string> = {
+  starter: 'Starter',
+  pro: 'Pro',
+  premium: 'Premium',
+}
+
+/** Fonction garde-fou : toute valeur inconnue est refusée. */
+export function palierValide(valeur: unknown): valeur is PalierAbonnement {
+  return (
+    typeof valeur === 'string' &&
+    (PALIERS_ABONNEMENT as string[]).includes(valeur)
+  )
+}
+
+/**
+ * Verrous structurels d'un palier — lus par proxy.ts et les routes API
+ * DEPUIS CETTE SOURCE UNIQUE (aucun nombre magique ailleurs) :
+ * - `limiteStaff` : nombre max de comptes STAFF actifs (null = illimité).
+ *   La limite ne s'applique qu'aux NOUVELLES créations (grandfathering).
+ * - `modulesAutorises` : permissions couvertes par le palier. Les modules
+ *   hors liste sont verrouillés côté serveur (Starter n'a pas stock,
+ *   hygiène ni pilotage).
+ * - `multiEtablissements` : le gérant peut rattacher plusieurs restaurants
+ *   à son compte (réservé Premium).
+ */
+export type VerrousPalier = {
+  limiteStaff: number | null
+  modulesAutorises: Permission[]
+  multiEtablissements: boolean
+}
+
+/** Offres d'abonnement : 3 paliers × 2 périodicités, montants à jour. */
+export const PLANS_ABONNEMENT: Record<
+  PalierAbonnement,
+  {
+    libelle: string
+    detail: string
+    verrous: VerrousPalier
+    periodicites: Record<
+      PlanAbonnement,
+      { montant: number; jours: number }
+    >
+  }
+> = {
+  starter: {
+    libelle: 'Starter',
+    detail: 'Pour démarrer : un restaurant, une petite équipe.',
+    verrous: {
+      limiteStaff: 1,
+      modulesAutorises: [
+        Permission.CAISSE,
+        Permission.CUISINE,
+        Permission.EQUIPE,
+        Permission.CLIENTS,
+      ],
+      multiEtablissements: false,
+    },
+    periodicites: {
+      mensuel: { montant: 15_000, jours: 30 },
+      annuel: { montant: 150_000, jours: 365 },
+    },
+  },
+  pro: {
+    libelle: 'Pro',
+    detail: 'Le plan de référence : équipe illimitée, tous les modules.',
+    verrous: {
+      limiteStaff: null,
+      modulesAutorises: [...TOUTES_LES_PERMISSIONS],
+      multiEtablissements: false,
+    },
+    periodicites: {
+      mensuel: { montant: 35_000, jours: 30 },
+      annuel: { montant: 350_000, jours: 365 },
+    },
+  },
+  premium: {
+    libelle: 'Premium',
+    detail: 'Pour les groupes : plusieurs établissements, support prioritaire.',
+    verrous: {
+      limiteStaff: null,
+      modulesAutorises: [...TOUTES_LES_PERMISSIONS],
+      multiEtablissements: true,
+    },
+    periodicites: {
+      mensuel: { montant: 60_000, jours: 30 },
+      annuel: { montant: 600_000, jours: 365 },
+    },
+  },
+}
+
+/**
+ * Montant à payer pour un palier et une périodicité — source unique
+ * utilisée par les routes de paiement (NabooPay comme fallback manuel).
+ */
+export function montantPalier(
+  palier: PalierAbonnement,
+  plan: PlanAbonnement,
+) {
+  return PLANS_ABONNEMENT[palier].periodicites[plan].montant
+}
+
+/** Un module (permission) est-il couvert par ce palier ? */
+export function moduleAutorise(
+  palier: PalierAbonnement,
+  permission: Permission,
+) {
+  return PLANS_ABONNEMENT[palier].verrous.modulesAutorises.includes(permission)
+}
+
+/**
+ * Palier minimal qui couvre un module — pour guider l'utilisateur vers la
+ * bonne mise à niveau (ex. module Pro bloqué → palier « pro »).
+ */
+export function palierMinimumPourModule(
+  permission: Permission,
+): PalierAbonnement {
+  const palier = PALIERS_ABONNEMENT.find((p) =>
+    moduleAutorise(p, permission),
+  )
+  return palier ?? 'premium'
+}
+
+/**
  * Statut d'un abonnement. `essai` est le cycle de découverte : 15 jours
  * d'accès complet, sans paiement. À échéance, l'accès se bloque (voir
  * `estAbonnementAccessible`) et le gérant bascule vers son plan payant.
@@ -185,25 +322,6 @@ export const LIBELLES_STATUT: Record<StatutAbonnement, string> = {
   essai: 'Essai gratuit',
   expire: 'Expiré',
   en_attente: 'Paiement en attente',
-}
-
-/** Offres d'abonnement : le chef paie le super admin pour accéder à son back-office. */
-export const PLANS_ABONNEMENT: Record<
-  PlanAbonnement,
-  { libelle: string; montant: number; jours: number; detail: string }
-> = {
-  mensuel: {
-    libelle: 'Mensuel',
-    montant: 25_000,
-    jours: 30,
-    detail: '25 000 F / mois — sans engagement',
-  },
-  annuel: {
-    libelle: 'Annuel',
-    montant: 250_000,
-    jours: 365,
-    detail: '250 000 F / an — 2 mois offerts',
-  },
 }
 
 export type ModePaiementAbonnement =
@@ -277,6 +395,8 @@ export type TransactionPaiement = {
   abonnementId: string
   restaurantId: string
   plan: PlanAbonnement
+  /** Palier choisi lors de la transaction (traçabilité, confirmé côté serveur). */
+  palier?: PalierAbonnement
   montant: number
   statut: 'pending' | 'paid' | 'cancelled' | 'refunded' | 'failed'
   creeLe: string
@@ -344,6 +464,12 @@ export type Abonnement = {
   id: string
   restaurantId: string
   plan: PlanAbonnement
+  /**
+   * Palier commercial. ABSENT sur les abonnements créés avant la Phase 4 :
+   * la valeur applicable est résolue à la lecture (`palierDeRestaurant`),
+   * jamais par écriture de migration. Fail-closed : défaut Starter.
+   */
+  palier?: PalierAbonnement
   statut: StatutAbonnement
   dateDebut: string
   dateFin: string
@@ -407,9 +533,14 @@ export type CommandeClient = {
 export const NOM_COOKIE_SESSION = 'alba_session'
 
 export function nouveauId(prefixe: string) {
-  return `${prefixe}-${Date.now().toString(36)}${Math.random()
-    .toString(36)
-    .slice(2, 7)}`
+  // randomUUID (Web Crypto) : sans collision, disponible côté serveur et
+  // côté navigateur en contexte sécurisé. Repli sur Math.random pour les
+  // contextes HTTP non sécurisés (accès LAN sur téléphone par exemple).
+  const hasard =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID().replaceAll('-', '').slice(0, 8)
+      : Math.random().toString(36).slice(2, 10)
+  return `${prefixe}-${Date.now().toString(36)}${hasard}`
 }
 
 export function joursRestants(dateFin: string, maintenant = new Date()) {

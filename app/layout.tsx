@@ -16,14 +16,9 @@ export const metadata: Metadata = {
   title: 'alba — l’excellence culinaire, simplifiée',
   description:
     'alba est l’app de gestion de restaurant offline-first pensée pour le terrain sénégalais : caisse résiliente, cuisine, stock, hygiène, équipe, fidélité et pilotage.',
-  generator: 'v0.app',
   icons: {
-    icon: [
-      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
-      { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
-      { url: '/icon.svg', type: 'image/svg+xml' },
-    ],
-    apple: '/apple-icon.png',
+    icon: '/icon.png',
+    apple: '/icon.png',
   },
 }
 

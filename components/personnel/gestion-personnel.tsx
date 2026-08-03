@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import {
+  ArrowUpRightIcon,
   CheckIcon,
   LoaderIcon,
   PencilIcon,
@@ -100,6 +102,7 @@ function GroupePermissions({
 export function GestionPersonnel() {
   const [membres, setMembres] = useState<Membre[] | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
+  const [verrouPalier, setVerrouPalier] = useState<string | null>(null)
   const [creation, setCreation] = useState(false)
   const [edition, setEdition] = useState<Membre | null>(null)
   const [chargement, setChargement] = useState(false)
@@ -166,9 +169,15 @@ export function GestionPersonnel() {
       const donnees = await reponse.json()
       if (!reponse.ok) {
         setErreur(donnees.erreur ?? 'Création impossible.')
+        // Verrou de palier : la limite de STAFF est dépassée — proposer la
+        // mise à niveau au gérant (jamais au staff, qui n'a pas cet écran).
+        if (donnees.raison === 'limite-staff') {
+          setVerrouPalier(donnees.raison)
+        }
         return
       }
       setCreation(false)
+      setVerrouPalier(null)
       setFormulaire({ nom: '', email: '', motDePasse: '', permissions: [] })
       await charger()
     } catch {
@@ -246,6 +255,23 @@ export function GestionPersonnel() {
         <p className="mb-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3.5 py-2.5 text-xs text-destructive">
           {erreur}
         </p>
+      )}
+
+      {verrouPalier === 'limite-staff' && (
+        <div className="mb-3 rounded-xl border border-primary/30 bg-primary/8 p-4">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Ton plan Starter inclut 1 membre du personnel actif. Passe au plan
+            Pro pour une équipe illimitée — les comptes existants ne sont
+            jamais désactivés.
+          </p>
+          <Link
+            href="/abonnement/renouveler?plan=pro&raison=limite-staff"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-medium text-primary-foreground"
+          >
+            Passer au plan Pro
+            <ArrowUpRightIcon className="size-3" />
+          </Link>
+        </div>
       )}
 
       {membres === null ? (

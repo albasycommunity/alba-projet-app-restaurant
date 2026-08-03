@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PLANS_ABONNEMENT, Role } from '@/lib/auth'
+import {
+  PLANS_ABONNEMENT,
+  Role,
+  montantPalier,
+  palierValide,
+  type PalierAbonnement,
+} from '@/lib/auth'
 import {
   creerRestaurantAvecAbonnement,
   trouverUtilisateurParEmail,
@@ -22,6 +28,9 @@ export async function POST(req: NextRequest) {
   const motDePasse =
     typeof corps?.motDePasse === 'string' ? corps.motDePasse.trim() : ''
   const plan = corps?.plan === 'annuel' ? 'annuel' : 'mensuel'
+  const palier: PalierAbonnement = palierValide(corps?.palier)
+    ? corps.palier
+    : 'starter'
 
   if (!nom || !quartier || !gerant) {
     return NextResponse.json(
@@ -45,7 +54,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const planChoisi = PLANS_ABONNEMENT[plan]
+  const offre = PLANS_ABONNEMENT[palier]
   await creerRestaurantAvecAbonnement({
     nom,
     quartier,
@@ -53,13 +62,15 @@ export async function POST(req: NextRequest) {
     email,
     motDePasse,
     plan,
-    montant: planChoisi.montant,
+    palier,
+    montant: montantPalier(palier, plan),
   })
 
   return NextResponse.json(
     {
       ok: true,
-      message: `${nom} est en ligne avec son abonnement ${planChoisi.libelle.toLowerCase()}.`,
+      message: `${nom} est en ligne avec son abonnement ${offre.libelle} (${plan}).`,
+      palier,
     },
     { status: 201 },
   )

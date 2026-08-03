@@ -1,17 +1,27 @@
 'use client'
 
 import Link from 'next/link'
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { LogOutIcon, ShieldAlertIcon } from 'lucide-react'
 import { useAuth } from '@/lib/auth-contexte'
 import { LogoMark } from '@/components/landing/logo'
 
 /**
- * Page « Accès non autorisé » : destination d'un STAFF sans aucune
- * permission (ou dont toutes les permissions ont été retirées).
+ * Page « Accès non autorisé » : destination d'un STAFF sans permission,
+ * ou dont une zone est verrouillée par le palier de son restaurant.
  * Le proxy.ts ne redirige jamais depuis cette page (pas de boucle).
+ * Un STAFF n'y voit JAMAIS de lien de paiement : c'est la gérante qui
+ * décide de la mise à niveau.
  */
-export default function PageAccesRefuse() {
+function ContenuAccesRefuse() {
   const { deconnecter, utilisateur } = useAuth()
+  const params = useSearchParams()
+  const raison = params.get('raison')
+
+  const messageModule = utilisateur
+    ? `Ton restaurant est abonné à un plan qui n'inclut pas ce module (Stock, Hygiène et Pilotage nécessitent le plan Pro). Contacte ta gérante : c'est elle qui peut faire évoluer l'abonnement.`
+    : 'Connecte-toi pour accéder à ton espace.'
 
   return (
     <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-4 py-10">
@@ -29,9 +39,11 @@ export default function PageAccesRefuse() {
           </h1>
           <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
             {utilisateur
-              ? `Ton compte (${utilisateur.nom}) n'a actuellement aucune
-                 zone autorisée. Ta gérante doit te donner au moins une
-                 permission depuis le back-office.`
+              ? raison === 'module-verrouille'
+                ? messageModule
+                : `Ton compte (${utilisateur.nom}) n'a actuellement aucune
+                   zone autorisée. Ta gérante doit te donner au moins une
+                   permission depuis le back-office.`
               : 'Connecte-toi pour accéder à ton espace.'}
           </p>
         </div>
@@ -53,5 +65,19 @@ export default function PageAccesRefuse() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function PageAccesRefuse() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-dvh items-center justify-center">
+          <LogoMark className="size-12 animate-haleine" />
+        </div>
+      }
+    >
+      <ContenuAccesRefuse />
+    </Suspense>
   )
 }

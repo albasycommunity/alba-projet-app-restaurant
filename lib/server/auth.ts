@@ -14,19 +14,25 @@ import {
   NOM_COOKIE_SESSION,
   Role,
   TOUTES_LES_PERMISSIONS,
+  palierMinimumPourModule,
   type Permission,
   type SessionUtilisateur,
 } from '@/lib/auth'
 import {
   lireBdd,
+  moduleAutoriseRestaurant,
   trouverUtilisateur,
   verifierAccesRestaurant,
 } from '@/lib/server/bdd'
 
 const SECRET_TEXTE = process.env.JWT_SECRET ?? ''
-if (!SECRET_TEXTE) {
-  console.warn(
-    '[alba] JWT_SECRET absent des variables d’environnement : la session ne fonctionnera pas.',
+if (!SECRET_TEXTE || SECRET_TEXTE.length < 32) {
+  // Échec rapide au démarrage : jamais de clé faible ou absente. Sans
+  // elle, les sessions ne peuvent pas être signées/validées de façon sûre.
+  throw new Error(
+    '[alba] JWT_SECRET manquant ou trop court (minimum 32 caractères). ' +
+      'Génère-en une avec : node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" ' +
+      'puis ajoute-la dans .env.local',
   )
 }
 const SECRET = new TextEncoder().encode(SECRET_TEXTE)
@@ -230,6 +236,13 @@ export async function lireBddEtVerifierRestaurant(restaurantId: string) {
  * - RESTAURANT_ADMIN : accès total par construction (voit tout).
  * - STAFF : doit posséder la permission demandée, à jour.
  * - autres rôles : refus.
+ *
+ * VERROU DE PALIER (Phase 4) : par-dessus la permission, le module demandé
+ * doit être couvert par le palier du restaurant (relu frais du store).
+ * - RESTAURANT_ADMIN : refus 403 avec `raison: 'module-verrouille'` et le
+ *   palier requis — l'UI le redirige vers la page de mise à niveau.
+ * - STAFF : refus 403 au message NON ACTIONNABLE (jamais de lien de
+ *   paiement : un STAFF n'achète pas d'abonnement).
  */
 export async function exigerPermission(
   req: NextRequest,
@@ -246,20 +259,48 @@ export async function exigerPermission(
     }
   }
   const { utilisateur } = session
-  if (utilisateur.role === Role.RESTAURANT_ADMIN) {
-    return { ok: true, utilisateur, abonnement: session.abonnement }
+  const aLaPermission =
+    utilisateur.role === Role.RESTAURANT_ADMIN ||
+    (utilisateur.role === Role.STAFF &&
+      (utilisateur.permissions ?? []).includes(permission))
+  if (!aLaPermission) {
+    return {
+      ok: false,
+      reponse: NextResponse.json(
+        { erreur: 'Accès refusé : permission manquante' },
+        { status: 403 },
+      ),
+    }
   }
-  if (
-    utilisateur.role === Role.STAFF &&
-    (utilisateur.permissions ?? []).includes(permission)
-  ) {
-    return { ok: true, utilisateur, abonnement: session.abonnement }
+
+  // Verrou de palier : le module doit être inclus dans l'abonnement.
+  if (utilisateur.restaurantId) {
+    const autorise = await moduleAutoriseRestaurant(
+      utilisateur.restaurantId,
+      permission,
+    )
+    if (!autorise) {
+      return {
+        ok: false,
+        reponse: NextResponse.json(
+          utilisateur.role === Role.STAFF
+            ? {
+                erreur:
+                  "Cette fonctionnalité n'est pas incluse dans l'abonnement actuel de votre restaurant. Contactez votre gérant.",
+                raison: 'module-verrouille',
+              }
+            : {
+                erreur:
+                  'Module non inclus dans votre plan actuel — passez au plan Pro.',
+                raison: 'module-verrouille',
+                palierRequis: palierMinimumPourModule(permission),
+                module: permission,
+              },
+          { status: 403 },
+        ),
+      }
+    }
   }
-  return {
-    ok: false,
-    reponse: NextResponse.json(
-      { erreur: 'Accès refusé : permission manquante' },
-      { status: 403 },
-    ),
-  }
+
+  return { ok: true, utilisateur, abonnement: session.abonnement }
 }

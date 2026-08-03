@@ -4,14 +4,21 @@ import { useEffect, useRef, useState } from 'react'
 import {
   CheckCircle2Icon,
   CreditCardIcon,
+  InfoIcon,
   LoaderIcon,
+  LockKeyholeIcon,
   SmartphoneIcon,
+  UsersIcon,
   XCircleIcon,
 } from 'lucide-react'
 import { Badge, Card, CardTitle, PageHeader } from '@/components/kit'
 import {
+  LIBELLE_PALIER,
+  PALIERS_ABONNEMENT,
   PLANS_ABONNEMENT,
+  montantPalier,
   type ModePaiementAbonnement,
+  type PalierAbonnement,
   type PlanAbonnement,
 } from '@/lib/auth'
 import { fcfa } from '@/lib/data'
@@ -34,14 +41,25 @@ type Donnees = {
   }
 }
 
+const MESSAGES_RAISON: Record<string, string> = {
+  'module-verrouille':
+    'Un module que tu essaies d’ouvrir n’est pas inclus dans ton plan actuel. Passe au plan Pro pour débloquer Stock, Hygiène et Pilotage.',
+  'limite-staff':
+    'Ton plan Starter inclut 1 membre du personnel. Passe au plan Pro pour une équipe illimitée.',
+  'multi-etablissement':
+    'La gestion de plusieurs établissements est réservée au plan Premium.',
+}
+
 export default function PageRenouveler() {
   const [donnees, setDonnees] = useState<Donnees | null>(null)
-  const [plan, setPlan] = useState<PlanAbonnement>('mensuel')
+  const [palier, setPalier] = useState<PalierAbonnement>('starter')
+  const [periodicite, setPeriodicite] = useState<PlanAbonnement>('mensuel')
   const [mode, setMode] = useState<ModePaiementAbonnement | null>(null)
   const [envoi, setEnvoi] = useState(false)
   const [confirme, setConfirme] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
+  const [raison, setRaison] = useState<string | null>(null)
   const [naboopayErreur, setNaboopayErreur] = useState<{
     message: string
     proposeManuel: boolean
@@ -67,6 +85,14 @@ export default function PageRenouveler() {
         if (mockCheckout) {
           setSimulation({ orderId: mockCheckout, enTravail: false, ok: null })
         }
+        // Cible venue d'un verrou (proxy) : le plan correspondant est
+        // présélectionné, la raison affichée en bannière.
+        const cible = params.get('plan')
+        if (cible === 'pro' || cible === 'premium' || cible === 'starter') {
+          setPalier(cible)
+        }
+        const raison = params.get('raison')
+        if (raison) setRaison(raison)
       })
       .catch(() => setDonnees(null))
   }, [])
@@ -104,7 +130,8 @@ export default function PageRenouveler() {
   }, [parametresUrl, abonnementStatut])
 
   const statut = donnees?.abonnement?.statut
-  const paiement = PLANS_ABONNEMENT[plan]
+  const offre = PLANS_ABONNEMENT[palier]
+  const montant = montantPalier(palier, periodicite)
   const modes = donnees?.paiement?.modes ?? []
   const naboopayActif = donnees?.paiement?.naboopayActif ?? false
   const naboopayMock = donnees?.paiement?.naboopayMock ?? false
@@ -118,7 +145,7 @@ export default function PageRenouveler() {
       const reponse = await fetch('/api/back-office/abonnement/renouveler', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan, naboopay: true }),
+        body: JSON.stringify({ plan: periodicite, palier, naboopay: true }),
       })
       const d = await reponse.json()
       if (!d.ok) {
@@ -150,7 +177,7 @@ export default function PageRenouveler() {
       const reponse = await fetch('/api/back-office/abonnement/renouveler', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan, mode }),
+        body: JSON.stringify({ plan: periodicite, palier, mode }),
       })
       const d = await reponse.json()
       if (!reponse.ok || !d.ok) {
@@ -232,6 +259,15 @@ export default function PageRenouveler() {
             <p className="text-sm text-muted-foreground">
               Le paiement en ligne a été annulé ou n’a pas abouti. Tu peux
               réessayer ci-dessous ou utiliser le paiement manuel.
+            </p>
+          </div>
+        )}
+
+        {raison && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/8 p-4">
+            <LockKeyholeIcon className="size-5 shrink-0 text-primary" />
+            <p className="text-sm text-muted-foreground">
+              {MESSAGES_RAISON[raison] ?? 'Ce passage au plan payant est requis.'}
             </p>
           </div>
         )}
@@ -324,39 +360,89 @@ export default function PageRenouveler() {
         )}
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {/* Choix du plan */}
+          {/* Choix du palier */}
           <Card>
             <CardTitle>1 · Choisis ton plan</CardTitle>
             <div className="flex flex-col gap-3">
-              {(Object.keys(PLANS_ABONNEMENT) as PlanAbonnement[]).map((p) => {
-                const offre = PLANS_ABONNEMENT[p]
-                const actif = plan === p
+              {PALIERS_ABONNEMENT.map((p) => {
+                const offrePalier = PLANS_ABONNEMENT[p]
+                const actif = palier === p
+                const pro = p === 'pro'
                 return (
-                  <button
+                  <div
                     key={p}
-                    type="button"
-                    onClick={() => setPlan(p)}
-                    className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all duration-300 ease-[var(--ease-spring)] ${
+                    className={`rounded-xl border p-4 transition-all duration-300 ease-[var(--ease-spring)] ${
                       actif
                         ? 'border-primary/50 bg-primary/10'
-                        : 'border-border bg-background hover:border-primary/30'
+                        : pro
+                          ? 'border-primary/25 bg-primary/5'
+                          : 'border-border bg-background hover:border-primary/30'
                     }`}
                   >
-                    <span
-                      className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                        actif ? 'border-primary' : 'border-border'
-                      }`}
+                    <button
+                      type="button"
+                      onClick={() => setPalier(p)}
+                      className="flex w-full items-center gap-3 text-left"
                     >
-                      {actif && <span className="size-2.5 rounded-full bg-primary" />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold">{offre.libelle}</p>
-                      <p className="text-[11px] text-muted-foreground">{offre.detail}</p>
+                      <span
+                        className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                          actif ? 'border-primary' : 'border-border'
+                        }`}
+                      >
+                        {actif && <span className="size-2.5 rounded-full bg-primary" />}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold">
+                            {offrePalier.libelle}
+                          </p>
+                          {pro && <Badge ton="primaire">Le plus populaire</Badge>}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {offrePalier.detail}
+                        </p>
+                      </div>
+                      <span className="font-display text-base font-semibold tnum">
+                        {fcfa(montantPalier(p, periodicite))}
+                      </span>
+                    </button>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-3 pl-8">
+                      <div className="flex overflow-hidden rounded-lg border border-border">
+                        {(['mensuel', 'annuel'] as PlanAbonnement[]).map((per) => (
+                          <button
+                            key={per}
+                            type="button"
+                            onClick={() => {
+                              setPalier(p)
+                              setPeriodicite(per)
+                            }}
+                            className={`px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                              actif && periodicite === per
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-background text-muted-foreground hover:bg-secondary'
+                            }`}
+                          >
+                            {per === 'mensuel' ? 'Mensuel' : 'Annuel'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <UsersIcon className="size-3" />
+                          {offrePalier.verrous.limiteStaff === null
+                            ? 'Équipe illimitée'
+                            : `${offrePalier.verrous.limiteStaff} membre${offrePalier.verrous.limiteStaff > 1 ? 's' : ''} d’équipe`}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <InfoIcon className="size-3" />
+                          {offrePalier.verrous.multiEtablissements
+                            ? 'Multi-établissements'
+                            : '1 établissement'}
+                        </span>
+                      </div>
                     </div>
-                    <span className="font-display text-base font-semibold tnum">
-                      {fcfa(offre.montant)}
-                    </span>
-                  </button>
+                  </div>
                 )
               })}
             </div>
@@ -378,7 +464,8 @@ export default function PageRenouveler() {
                   Paiement en ligne
                 </CardTitle>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Tu es redirigé vers la page de paiement sécurisée. Dès la
+                  {LIBELLE_PALIER[palier]} · {periodicite === 'annuel' ? 'annuel' : 'mensuel'} — tu es
+                  redirigé vers la page de paiement sécurisée. Dès la
                   confirmation, l’abonnement s’active automatiquement — sans
                   attente du super admin.
                 </p>
@@ -394,8 +481,8 @@ export default function PageRenouveler() {
                     <>
                       <CreditCardIcon className="size-4" />
                       {naboopayMock
-                        ? 'Démarrer le paiement (simulé)'
-                        : `Payer ${fcfa(paiement.montant)} en ligne`}
+                        ? `Démarrer le paiement ${LIBELLE_PALIER[palier]} (simulé)`
+                        : `Payer ${fcfa(montant)} en ligne`}
                     </>
                   )}
                 </button>
@@ -467,7 +554,7 @@ export default function PageRenouveler() {
                   <p className="text-xs text-muted-foreground">
                     Envoie{' '}
                     <span className="font-semibold text-foreground">
-                      {fcfa(paiement.montant)}
+                      {fcfa(montant)}
                     </span>{' '}
                     au {numero} ({mode}), puis confirme ci-dessous. Le super
                     admin valide dès réception.
@@ -492,7 +579,7 @@ export default function PageRenouveler() {
                 {envoi ? (
                   <LoaderIcon className="size-4 animate-spin" />
                 ) : (
-                  `J’ai payé ${mode ? fcfa(paiement.montant) : ''}`
+                  `J’ai payé ${mode ? fcfa(montant) : ''}`
                 )}
               </button>
 

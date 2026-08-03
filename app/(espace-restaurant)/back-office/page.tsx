@@ -257,7 +257,11 @@ export default function PageBackOffice() {
         pied={
           <button
             type="button"
-            disabled={nouveau.nom.trim().length < 2 || nouveau.prix <= 0}
+            disabled={
+              nouveau.nom.trim().length < 2 ||
+              nouveau.prix <= 0 ||
+              nouveau.preparation < 1
+            }
             onClick={() => {
               ajouterPlat(nouveau)
               setNouveau({ nom: '', prix: 0, categorie: 'Plats', preparation: 8 })
@@ -293,14 +297,25 @@ export default function PageBackOffice() {
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Temps de préparation</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Temps de préparation (min)
+              </span>
               <input
                 type="number"
                 min={1}
-                value={nouveau.preparation}
-                onChange={(e) => setNouveau({ ...nouveau, preparation: +e.target.value })}
-                className="h-11 rounded-lg border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-primary/60 focus:ring-3 focus:ring-primary/15"
+                step={1}
+                value={nouveau.preparation || ''}
+                onChange={(e) =>
+                  setNouveau({ ...nouveau, preparation: +e.target.value })
+                }
+                placeholder="Ex. : 15"
+                className="h-11 rounded-lg border border-border bg-background px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary/60 focus:ring-3 focus:ring-primary/15"
               />
+              {nouveau.preparation < 1 && (
+                <span className="text-[11px] text-destructive">
+                  Indique un temps d'au moins 1 minute.
+                </span>
+              )}
             </label>
           </div>
           <label className="flex flex-col gap-1.5">

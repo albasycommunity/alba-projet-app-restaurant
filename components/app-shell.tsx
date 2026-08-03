@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { useAlba } from '@/lib/store'
 import { initialesDe, useAuth } from '@/lib/auth-contexte'
 import { Permission, Role } from '@/lib/auth'
+import { LogoMark } from '@/components/landing/logo'
 import { SyncPill } from '@/components/sync-pill'
 import { Notifs } from '@/components/notifs'
 import { Palette } from '@/components/palette'
@@ -70,20 +71,6 @@ function entréesVisibles(
     )
   }
   return []
-}
-
-function AlbaMark({ className }: { className?: string }) {
-  return (
-    <span
-      className={cn(
-        'flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground',
-        className,
-      )}
-      aria-hidden="true"
-    >
-      a
-    </span>
-  )
 }
 
 function estActif(pathname: string, href: string) {
@@ -155,7 +142,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Rail latéral — desktop */}
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-5 border-r border-border bg-card/40 px-3 py-5 lg:flex">
         <div className="flex items-center gap-3 px-2">
-          <AlbaMark />
+          <LogoMark className="size-9" />
           <div className="flex min-w-0 flex-col leading-tight">
             <span className="font-display text-lg font-semibold tracking-tight">
               alba
@@ -259,7 +246,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* En-tête mobile */}
       <header className="glass sticky top-0 z-40 flex items-center gap-3 border-b border-border px-4 py-3 lg:hidden">
-        <AlbaMark className="size-8 rounded-lg text-base" />
+        <LogoMark className="size-8" />
         <div className="flex min-w-0 flex-col leading-tight">
           <span className="font-display text-base font-semibold">alba</span>
           <span className="truncate text-[11px] text-muted-foreground">
