@@ -655,6 +655,11 @@ export function fcfa(montant: number) {
   return new Intl.NumberFormat('fr-FR').format(Math.round(montant)) + ' F'
 }
 
+/** Nombre entier avec les séparateurs de milliers à la française. */
+export function nombreFormate(n: number) {
+  return new Intl.NumberFormat('fr-FR').format(n)
+}
+
 /** Version courte pour les graphiques : 932 000 F → 932 k */
 export function fcfaCourt(montant: number) {
   if (montant >= 1_000_000) return (montant / 1_000_000).toFixed(1) + ' M'

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Role, joursRestants, MODES_MOBILE_MONEY } from '@/lib/auth'
 import {
   abonnementDeRestaurant,
+  decouverteActionsRestantes,
   lireBdd,
   lireParametresPaiement,
   palierDeRestaurant,
@@ -62,6 +63,10 @@ export async function GET(req: NextRequest) {
       dateFin: abonnement.dateFin,
       montant: abonnement.montant,
       joursRestants: joursRestants(abonnement.dateFin),
+      // Compteur d'actions de découverte — null hors mode découverte.
+      decouverteActionsRestantes: await decouverteActionsRestantes(
+        utilisateur.restaurantId!,
+      ),
     },
     paiements: bdd.paiements
       .filter((p) => p.abonnementId === abonnement.id)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   BanknoteIcon,
   DeleteIcon,
@@ -15,6 +16,7 @@ import {
   type Reglement,
 } from '@/lib/data'
 import { useAlba, vibrer } from '@/lib/store'
+import { useAuth } from '@/lib/auth-contexte'
 import { Sheet } from '@/components/kit'
 import { QrMarchand } from '@/components/caisse/qr-marchand'
 import { Recu } from '@/components/caisse/recu'
@@ -34,6 +36,8 @@ export function Paiement({
   onFermer: () => void
 }) {
   const { etat, envoyer, total, notifier } = useAlba()
+  const { abonnement, actualiser } = useAuth()
+  const router = useRouter()
   const [reglements, setReglements] = useState<Reglement[]>([])
   const [saisie, setSaisie] = useState('')
   const [qr, setQr] = useState(false)
@@ -76,8 +80,31 @@ export function Paiement({
     vibrer(12)
   }
 
-  const valider = () => {
+  const valider = async () => {
     if (!complet) return
+    // En découverte, chaque encaissement est une action réelle : la
+    // consommation est non bloquante pour le rendu. Quota épuisé → 402,
+    // on redirige vers l'activation SANS enregistrer le ticket. Erreur
+    // réseau → fail-open : le ticket passe quand même (jamais perdu).
+    if (
+      abonnement?.statut === 'decouverte' &&
+      (abonnement.decouverteActionsRestantes ?? 0) > 0
+    ) {
+      try {
+        const reponse = await fetch('/api/back-office/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'encaisser' }),
+        })
+        if (reponse.status === 402) {
+          router.push('/abonnement/renouveler?raison=activation-requise')
+          return
+        }
+        actualiser()
+      } catch {
+        // Réseau indisponible : on laisse passer l'encaissement.
+      }
+    }
     const ref = `#${etat.prochainNumero}`
     const horsLigne = typeof navigator !== 'undefined' && !navigator.onLine
     envoyer({ type: 'encaisser', reglements, ref })

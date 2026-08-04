@@ -33,10 +33,11 @@ const OUTILS = [
 type AbonnementInfo = {
   abonnement: {
     plan: 'mensuel' | 'annuel'
-    statut: 'actif' | 'essai' | 'expire' | 'en_attente'
+    statut: 'actif' | 'decouverte' | 'expire' | 'en_attente'
     dateFin: string
     montant: number
     joursRestants: number
+    decouverteActionsRestantes: number | null
   } | null
 }
 
@@ -63,8 +64,10 @@ export default function PageBackOffice() {
 
   const statut = abonnement?.statut ?? 'actif'
   const jours = abonnement?.joursRestants ?? 30
+  const decouverte = statut === 'decouverte'
+  const actionsRestantes = abonnement?.decouverteActionsRestantes ?? 3
+  const inactif = statut === 'expire' || statut === 'en_attente'
   const bientotExpiration = statut === 'actif' && jours <= 7
-  const inactif = statut !== 'actif'
 
   return (
     <div className="flex flex-col">
@@ -101,6 +104,34 @@ export default function PageBackOffice() {
               className="rounded-lg bg-destructive px-3.5 py-2 text-xs font-medium text-destructive-foreground"
             >
               Renouveler maintenant
+            </Link>
+          </div>
+        ) : decouverte ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/8 p-4">
+            <ReceiptTextIcon className="size-5 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">
+                Mode découverte — tu explores Alba avec des données d'exemple
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {actionsRestantes > 0 ? (
+                  <>
+                    Il te reste{' '}
+                    <span className="font-semibold text-foreground tnum">
+                      {actionsRestantes} action{actionsRestantes > 1 ? 's' : ''} réelle{actionsRestantes > 1 ? 's' : ''}
+                    </span>{' '}
+                    (encaissements, création d'employés). Quand tu es prêt :
+                  </>
+                ) : (
+                  'Actions réelles épuisées — active Alba pour continuer.'
+                )}
+              </p>
+            </div>
+            <Link
+              href="/abonnement/renouveler?raison=activation-requise"
+              className="rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground"
+            >
+              Activer mon restaurant
             </Link>
           </div>
         ) : bientotExpiration ? (

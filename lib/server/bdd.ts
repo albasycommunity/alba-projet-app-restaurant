@@ -23,7 +23,6 @@
 import 'server-only'
 import { hashSync } from 'bcryptjs'
 import {
-  DUREE_ESSAI_JOURS,
   PLANS_ABONNEMENT,
   Permission,
   Role,
@@ -181,10 +180,10 @@ function utilisateurDepuisLigne(l: Record<string, unknown>): Utilisateur {
   return { id: String(l.id), email: String(l.email), password_hash: String(l.password_hash), nom: String(l.nom), role: l.role as Role, restaurantId: (l.restaurant_id as string | null) ?? null, actif: Boolean(l.actif), permissions: Array.isArray(l.permissions) ? (l.permissions as Permission[]) : [], creeLe: iso(String(l.cree_le))! }
 }
 function abonnementVersLigne(a: Abonnement): Ligne {
-  return { id: a.id, restaurant_id: a.restaurantId, plan: a.plan, palier: a.palier ?? null, statut: a.statut, date_debut: a.dateDebut, date_fin: a.dateFin, montant: a.montant }
+  return { id: a.id, restaurant_id: a.restaurantId, plan: a.plan, palier: a.palier ?? null, statut: a.statut, date_debut: a.dateDebut, date_fin: a.dateFin, montant: a.montant, decouverte_actions_restantes: a.decouverteActionsRestantes ?? 3 }
 }
 function abonnementDepuisLigne(l: Record<string, unknown>): Abonnement {
-  return { id: String(l.id), restaurantId: String(l.restaurant_id), plan: l.plan as PlanAbonnement, palier: palierValide(l.palier) ? l.palier : undefined, statut: l.statut as StatutAbonnement, dateDebut: iso(String(l.date_debut))!, dateFin: iso(String(l.date_fin))!, montant: Number(l.montant) }
+  return { id: String(l.id), restaurantId: String(l.restaurant_id), plan: l.plan as PlanAbonnement, palier: palierValide(l.palier) ? l.palier : undefined, statut: l.statut as StatutAbonnement, dateDebut: iso(String(l.date_debut))!, dateFin: iso(String(l.date_fin))!, montant: Number(l.montant), decouverteActionsRestantes: typeof l.decouverte_actions_restantes === 'number' ? l.decouverte_actions_restantes : 3 }
 }
 function paiementVersLigne(p: Paiement): Ligne {
   return { id: p.id, abonnement_id: p.abonnementId, restaurant_id: p.restaurantId, restaurant_nom: p.restaurantNom, montant: p.montant, mode: p.mode, motif: p.motif, date: p.date }
@@ -570,6 +569,10 @@ export async function etatDuStore() {
  * relue à chaque requête sensible (jamais mis en cache dans le JWT).
  *
  * Règles :
+ * - mode « decouverte » : palier effectif `pro`, quelle que soit la
+ *   valeur du champ `palier` — pendant la découverte, tous les modules
+ *   (Stock, Hygiène, Pilotage) sont visibles : démonstration complète de
+ *   la valeur ;
  * - l'enregistrement d'abonnement fait foi (`palier` écrit lors du
  *   renouvellement / de l'inscription) — anti-escalade : jamais de valeur
  *   envoyée par le client ;
@@ -594,6 +597,7 @@ function palierEffectifBdd(
     .filter((a) => a.restaurantId === restaurantId)
     .sort((a, b) => b.dateFin.localeCompare(a.dateFin))[0]
   if (!abonnement) return 'starter'
+  if (abonnement.statut === 'decouverte') return 'pro'
   if (palierValide(abonnement.palier)) return abonnement.palier
   const admin = bdd.utilisateurs.find(
     (u) =>
@@ -642,7 +646,7 @@ export async function fideliteDeClient(userId: string) {
 /**
  * Vérification autoritaire pour un RESTAURANT_ADMIN :
  * le compte utilisateur doit être actif ET l'abonnement de son restaurant
- * accessible (payé « actif » ou essai en cours de validité).
+ * accessible (payé « actif » ou mode « decouverte » en cours).
  * Réappliquée à chaque requête (proxy + API), jamais seulement côté UI.
  */
 export async function verifierAccesRestaurant(
@@ -713,20 +717,21 @@ export async function creerRestaurantAvecAbonnement(input: {
 
 /**
  * Auto-inscription depuis la vitrine : le restaurant, son compte gérant et
- * un abonnement en ESSAI GRATUIT (DUREE_ESSAI_JOURS jours, montant 0) sont
- * créés d'un seul geste.
+ * un abonnement en MODE DÉCOUVERTE (statut `decouverte`, montant 0,
+ * découverte_actions_restantes = 3) sont créés d'un seul geste.
+ * Renvoie l'admin créé pour que la route d'inscription puisse signer la
+ * session immédiatement (aucune étape de connexion séparée).
  */
-export async function creerRestaurantEnEssai(input: {
+export async function creerRestaurantEnDecouverte(input: {
   nom: string
   quartier: string
   gerant: string
   email: string
   motDePasse: string
-  plan: PlanAbonnement
-  palier: PalierAbonnement
 }) {
   const maintenant = new Date()
-  return muterBdd((bdd) => {
+  let cree: { admin: Utilisateur; restaurant: Restaurant } | null = null
+  await muterBdd((bdd) => {
     const restaurant: Restaurant = {
       id: nouveauId('r'),
       nom: input.nom,
@@ -749,17 +754,61 @@ export async function creerRestaurantEnEssai(input: {
     const abonnement: Abonnement = {
       id: nouveauId('a'),
       restaurantId: restaurant.id,
-      plan: input.plan,
-      palier: input.palier,
-      statut: 'essai',
+      plan: 'mensuel',
+      statut: 'decouverte',
+      // Échéance lointaine : jamais vérifiée en découverte (illimitée dans
+      // le temps) — le type exige une chaîne, on garde une compatibilité.
       dateDebut: dateIso(maintenant),
-      dateFin: dateDans(DUREE_ESSAI_JOURS),
+      dateFin: dateDans(3650),
       montant: 0,
+      decouverteActionsRestantes: 3,
     }
     bdd.restaurants.push(restaurant)
     bdd.utilisateurs.push(admin)
     bdd.abonnements.push(abonnement)
+    cree = { admin, restaurant }
   })
+  return cree!
+}
+
+/**
+ * Compteur d'actions de découverte restantes d'un restaurant — lu FRAIS
+ * (mutation sans écriture), `null` si l'abonnement n'est pas en découverte.
+ */
+export async function decouverteActionsRestantes(
+  restaurantId: string,
+): Promise<number | null> {
+  let restantes: number | null = null
+  await muterBdd((bdd) => {
+    const abonnement = bdd.abonnements
+      .filter((a) => a.restaurantId === restaurantId)
+      .sort((a, b) => b.dateFin.localeCompare(a.dateFin))[0]
+    if (!abonnement || abonnement.statut !== 'decouverte') return
+    restantes = abonnement.decouverteActionsRestantes ?? 3
+  })
+  return restantes
+}
+
+/**
+ * Consomme une action de découverte (décrément atomique dans la mutation) :
+ * ne passe jamais sous 0. Refuse si le compteur est déjà épuisé ou si
+ * l'abonnement n'est pas en découverte.
+ */
+export async function consommerActionDecouverte(restaurantId: string): Promise<
+  { ok: true; restantes: number } | { ok: false }
+> {
+  let resultat: { ok: true; restantes: number } | { ok: false } = { ok: false }
+  await muterBdd((bdd) => {
+    const abonnement = bdd.abonnements
+      .filter((a) => a.restaurantId === restaurantId)
+      .sort((a, b) => b.dateFin.localeCompare(a.dateFin))[0]
+    if (!abonnement || abonnement.statut !== 'decouverte') return
+    const restantes = abonnement.decouverteActionsRestantes ?? 3
+    if (restantes <= 0) return
+    abonnement.decouverteActionsRestantes = restantes - 1
+    resultat = { ok: true, restantes: restantes - 1 }
+  })
+  return resultat
 }
 
 /**

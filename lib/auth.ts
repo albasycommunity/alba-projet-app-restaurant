@@ -308,18 +308,16 @@ export function palierMinimumPourModule(
 }
 
 /**
- * Statut d'un abonnement. `essai` est le cycle de découverte : 15 jours
- * d'accès complet, sans paiement. À échéance, l'accès se bloque (voir
- * `estAbonnementAccessible`) et le gérant bascule vers son plan payant.
+ * Statut d'un abonnement. `decouverte` est le mode d'entrée : accès
+ * complet, sans échéance ni paiement — le compteur d'actions réelles
+ * (`decouverte_actions_restantes`) déclenchera la bascule vers le plan
+ * payant (sprints suivants), jamais le temps.
  */
-export type StatutAbonnement = 'actif' | 'essai' | 'expire' | 'en_attente'
-
-/** Durée de l'essai gratuit accordée à chaque nouveau plan. */
-export const DUREE_ESSAI_JOURS = 15
+export type StatutAbonnement = 'actif' | 'decouverte' | 'expire' | 'en_attente'
 
 export const LIBELLES_STATUT: Record<StatutAbonnement, string> = {
   actif: 'Actif',
-  essai: 'Essai gratuit',
+  decouverte: 'Découverte',
   expire: 'Expiré',
   en_attente: 'Paiement en attente',
 }
@@ -474,19 +472,25 @@ export type Abonnement = {
   dateDebut: string
   dateFin: string
   montant: number
+  /**
+   * Actions de découverte restantes (mode `decouverte` uniquement) —
+   * décrémentées par `consommerActionDecouverte`.
+   */
+  decouverteActionsRestantes?: number
 }
 
 /**
  * Garde d'accès au back-office (utilisée par le proxy et chaque route API) :
  * - « actif » : accès complet.
- * - « essai » : accès complet tant que l'échéance des 15 jours n'est pas
- *   atteinte — ensuite, le blocage est automatique et le gérant bascule
- *   vers le renouvellement (plan payant).
+ * - « decouverte » : accès complet, sans aucune échéance — le mode de
+ *   découverte est illimité dans le temps. Le paiement sera déclenché par
+ *   les actions réelles (compteur `decouverte_actions_restantes`, sprints
+ *   suivants), pas par le temps.
  * - « expire » / « en_attente » : accès coupé.
  *
- * Point de blocage APRÈS l'essai : rien d'autre à changer — `verifierAccesRestaurant`
- * renvoie `abonnementActif: false`, le proxy redirige vers /abonnement/renouveler.
- * La relance, elle, vit dans l'écran Abonnement (bannière « essai restant »).
+ * Point de blocage (renouvellement) : `verifierAccesRestaurant` renvoie
+ * `abonnementActif: false`, le proxy redirige vers /abonnement/renouveler.
+ * La relance, elle, vit dans l'écran Abonnement (bannière d'échéance).
  */
 export function estAbonnementAccessible(
   abonnement: Pick<Abonnement, 'statut' | 'dateFin'> | null,
@@ -494,9 +498,7 @@ export function estAbonnementAccessible(
 ) {
   if (!abonnement) return false
   if (abonnement.statut === 'actif') return true
-  if (abonnement.statut === 'essai') {
-    return new Date(abonnement.dateFin).getTime() >= maintenant.getTime()
-  }
+  if (abonnement.statut === 'decouverte') return true
   return false
 }
 

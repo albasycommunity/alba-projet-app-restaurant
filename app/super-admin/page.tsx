@@ -34,7 +34,7 @@ import {
   type PlanAbonnement,
   type StatutAbonnement,
 } from '@/lib/auth'
-import { fcfa } from '@/lib/data'
+import { fcfa, nombreFormate } from '@/lib/data'
 import { LogoMark } from '@/components/landing/logo'
 
 type AbonnementVue = {
@@ -80,7 +80,7 @@ type Overview = {
     restaurantsActifs: number
     admins: number
     abonnementsActifs: number
-    essais: number
+    decouvertes: number
     enAttente: number
     expires: number
     mrq: number
@@ -98,7 +98,7 @@ type Onglet = 'vue' | 'restaurants' | 'comptes' | 'paiement'
 function statutTon(s: StatutAbonnement) {
   return s === 'actif'
     ? ('succes' as const)
-    : s === 'essai'
+    : s === 'decouverte'
       ? ('primaire' as const)
       : s === 'en_attente'
         ? ('attention' as const)
@@ -253,14 +253,14 @@ function VueEnsemble({ donnees }: { donnees: Overview }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
           libelle="Restaurants inscrits"
-          valeur={stats.restaurants}
+          valeur={nombreFormate(stats.restaurants)}
           detail={`${stats.restaurantsActifs} actifs`}
           icone={<StoreIcon className="size-3.5" />}
         />
         <StatTile
           libelle="Abonnements actifs"
-          valeur={stats.abonnementsActifs}
-          detail={`${stats.essais} en essai · ${stats.enAttente} en attente · ${stats.expires} expirés`}
+          valeur={nombreFormate(stats.abonnementsActifs)}
+          detail={`${stats.decouvertes} en découverte · ${stats.enAttente} en attente · ${stats.expires} expirés`}
           icone={<WalletIcon className="size-3.5" />}
           ton={stats.enAttente > 0 ? 'primaire' : 'succes'}
         />
@@ -273,7 +273,7 @@ function VueEnsemble({ donnees }: { donnees: Overview }) {
         />
         <StatTile
           libelle="Commandes clients"
-          valeur={stats.commandesClients}
+          valeur={nombreFormate(stats.commandesClients)}
           detail={`${stats.clients} clients inscrits`}
           icone={<UsersIcon className="size-3.5" />}
         />
@@ -400,7 +400,7 @@ function Restaurants({
                       <span className="text-[10px] text-muted-foreground tnum">
                         {fcfa(a.montant)} / {a.plan}
                         {' · '}
-                        {a.statut === 'actif' || a.statut === 'essai'
+                        {a.statut === 'actif' || a.statut === 'decouverte'
                           ? `${a.joursRestants} j restants`
                           : `échéance ${new Date(a.dateFin).toLocaleDateString('fr-FR')}`}
                       </span>

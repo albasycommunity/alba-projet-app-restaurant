@@ -111,6 +111,7 @@ export function GestionPersonnel() {
     nom: '',
     email: '',
     motDePasse: '',
+    poste: '',
     permissions: [] as Permission[],
   })
 
@@ -178,7 +179,7 @@ export function GestionPersonnel() {
       }
       setCreation(false)
       setVerrouPalier(null)
-      setFormulaire({ nom: '', email: '', motDePasse: '', permissions: [] })
+      setFormulaire({ nom: '', email: '', motDePasse: '', poste: '', permissions: [] })
       await charger()
     } catch {
       setErreur('Le serveur ne répond pas.')
@@ -379,7 +380,8 @@ export function GestionPersonnel() {
               chargement ||
               formulaire.nom.trim().length < 2 ||
               formulaire.email.length < 3 ||
-              formulaire.motDePasse.length < 8
+              formulaire.motDePasse.length < 8 ||
+              formulaire.poste.trim().length < 2
             }
             onClick={creer}
             className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary font-medium text-primary-foreground transition-all duration-300 ease-[var(--ease-spring)] active:scale-[0.98] disabled:opacity-50"
@@ -412,6 +414,19 @@ export function GestionPersonnel() {
                 setFormulaire({ ...formulaire, nom: e.target.value })
               }
               placeholder="Ex. : Aïssatou Diallo"
+              className={CHAMP}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              Poste
+            </span>
+            <input
+              value={formulaire.poste}
+              onChange={(e) =>
+                setFormulaire({ ...formulaire, poste: e.target.value })
+              }
+              placeholder="Ex. : Caissière, Cuisinier"
               className={CHAMP}
             />
           </label>

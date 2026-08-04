@@ -704,9 +704,41 @@ type Contexte = {
 const AlbaContexte = createContext<Contexte | null>(null)
 
 export function AlbaProvider({ children }: { children: React.ReactNode }) {
-  const [etat, envoyer] = useReducer(reducer, null, etatInitial)
+  const [etat, dispatch] = useReducer(reducer, null, etatInitial)
   const [notifs, setNotifs] = useState<Notif[]>([])
   const [pret, setPret] = useState(false)
+
+  /**
+   * Le pointage reste optimiste (offline-first : un scan ne bloque jamais
+   * l'interface) mais il est PERSISTÉ en parallèle via POST /api/rh/pointer
+   * — chaque scan devient une vraie ligne Supabase. En cas d'échec réseau,
+   * on garde l'état local et on ne bloque rien, comme les tickets non
+   * synchronisés (`synchronise: false`) : la prochaine session repartira
+   * sur un état propre, sans perte de service.
+   */
+  const envoyer = useCallback(
+    (action: Action) => {
+      dispatch(action)
+      if (action.type === 'pointer') {
+        const employe = etat.equipe.find((e) => e.id === action.id)
+        const type: Pointage['type'] =
+          employe?.statut === 'present'
+            ? 'pause'
+            : employe?.statut === 'pause'
+              ? 'reprise'
+              : 'arrivee'
+        fetch('/api/rh/pointer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type }),
+        }).catch(() => {
+          // Hors ligne : le scan reste en local, la persistance reprendra
+          // au prochain geste. Aucune interruption pour l'équipe.
+        })
+      }
+    },
+    [etat.equipe],
+  )
 
   // Reprise de session : rien n'est perdu même si l'app s'est fermée
   // brutalement (coupure de batterie).

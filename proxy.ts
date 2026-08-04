@@ -72,6 +72,15 @@ const ZONES_MODULES_PRO = ['/stock', '/hygiene', '/pilotage']
 /** Zones où la simple appartenance au rôle suffit (gestion de l'abonnement). */
 const ZONES_ABONNEMENT = ['/abonnement']
 
+/**
+ * Espace personnel « Mon compte » : accessible à tout STAFF et
+ * RESTAURANT_ADMIN authentifié, indépendamment de ses permissions métier
+ * (ce n'est pas une zone métier, c'est un espace personnel — pointage,
+ * absences, changement de mot de passe). Réservé à ces deux rôles :
+ * SUPER_ADMIN et CLIENT en sont redirigés.
+ */
+const ZONE_MON_COMPTE = ['/mon-compte']
+
 const ZONES_SUPER_ADMIN = ['/super-admin']
 
 /** Page « accès refusé » : jamais de redirection vers elle-même. */
@@ -155,6 +164,7 @@ export async function proxy(request: NextRequest) {
 
   const zoneBackOffice = estDans(pathname, ZONES_BACK_OFFICE)
   const zoneAbonnement = estDans(pathname, ZONES_ABONNEMENT)
+  const zoneMonCompte = estDans(pathname, ZONE_MON_COMPTE)
   const zoneSuperAdmin = estDans(pathname, ZONES_SUPER_ADMIN)
   const zoneAccesRefuse = estDans(pathname, ZONE_ACCES_REFUSE)
   const pageAuth = estDans(pathname, PAGES_AUTH)
@@ -199,6 +209,7 @@ export async function proxy(request: NextRequest) {
       return fermerSessionEtRediriger(request, '/login')
     }
     if (zoneSuperAdmin) return NextResponse.next()
+    if (zoneMonCompte) return rediriger(request, '/super-admin')
     if (pageAuth) return rediriger(request, '/super-admin')
     return NextResponse.next()
   }
@@ -210,6 +221,9 @@ export async function proxy(request: NextRequest) {
     }
     if (zoneSuperAdmin) return rediriger(request, '/back-office')
     if (zoneAbonnement) return NextResponse.next()
+    // Espace personnel : accessible même si l'abonnement est expiré
+    // (comme /abonnement) — ce n'est pas une zone métier.
+    if (zoneMonCompte) return NextResponse.next()
     if (zoneBackOffice) {
       if (!compteActif.abonnementActif) {
         return rediriger(request, '/abonnement/renouveler')
@@ -246,6 +260,10 @@ export async function proxy(request: NextRequest) {
 
     if (zoneAccesRefuse) return NextResponse.next()
 
+    // Espace personnel « Mon compte » : ouvert à tout STAFF authentifié,
+    // sans aucune permission métier requise.
+    if (zoneMonCompte) return NextResponse.next()
+
     // Zone réellement autorisée → laisser passer, sauf si le palier du
     // restaurant ne couvre pas le module (ex. permission Stock d'un
     // Starter) : un STAFF ne voit jamais de lien de paiement, il est
@@ -277,7 +295,7 @@ export async function proxy(request: NextRequest) {
   if (!compteActif.compteActif) {
     return fermerSessionEtRediriger(request, '/login')
   }
-  if (zoneBackOffice || zoneAbonnement || zoneSuperAdmin) {
+  if (zoneBackOffice || zoneAbonnement || zoneSuperAdmin || zoneMonCompte) {
     return rediriger(request, '/login')
   }
   if (pageAuth) return rediriger(request, '/')

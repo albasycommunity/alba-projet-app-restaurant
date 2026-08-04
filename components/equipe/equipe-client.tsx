@@ -21,6 +21,8 @@ import {
   type Employe,
 } from '@/lib/data'
 import { useAlba, vibrer } from '@/lib/store'
+import { useAuth } from '@/lib/auth-contexte'
+import { Role } from '@/lib/auth'
 import {
   Badge,
   Card,
@@ -35,18 +37,23 @@ import {
 } from '@/components/kit'
 import { BadgeQr } from '@/components/equipe/badge-qr'
 import { Planning } from '@/components/equipe/planning'
+import { OngletRh } from '@/components/equipe/onglet-rh'
 import { cn } from '@/lib/utils'
 
-type Vue = 'presence' | 'planning' | 'formation' | 'performance'
+type Vue = 'presence' | 'planning' | 'formation' | 'performance' | 'rh'
 
 /**
  * Équipe. Une seule question par onglet : qui est là, qui vient quand,
  * qui sait faire quoi, qui vend combien. Tout se fait en un geste.
+ * L'onglet RH, lui, n'appartient qu'à la gérante.
  */
 export function EquipeClient() {
   const { etat, indicateurs, envoyer, notifier } = useAlba()
+  const { utilisateur } = useAuth()
   const [vue, setVue] = useState<Vue>('presence')
   const [fiche, setFiche] = useState<Employe | null>(null)
+
+  const estGerante = utilisateur?.role === Role.RESTAURANT_ADMIN
 
   const presents = etat.equipe.filter((e) => e.statut === 'present')
   const enPause = etat.equipe.filter((e) => e.statut === 'pause')
@@ -137,6 +144,9 @@ export function EquipeClient() {
             { valeur: 'planning', libelle: 'Planning' },
             { valeur: 'formation', libelle: 'Formation' },
             { valeur: 'performance', libelle: 'Performance' },
+            ...(estGerante
+              ? [{ valeur: 'rh' as const, libelle: 'RH' }]
+              : []),
           ]}
         />
       </Contenu>
@@ -302,6 +312,12 @@ export function EquipeClient() {
               />
             ))
           )}
+        </Contenu>
+      )}
+
+      {vue === 'rh' && estGerante && (
+        <Contenu>
+          <OngletRh />
         </Contenu>
       )}
 

@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
       restaurantsActifs: bdd.restaurants.filter((r) => r.actif).length,
       admins: admins.length,
       abonnementsActifs: actifs.length,
-      essais: bdd.abonnements.filter((a) => a.statut === 'essai').length,
+      decouvertes: bdd.abonnements.filter((a) => a.statut === 'decouverte').length,
       enAttente: bdd.abonnements.filter((a) => a.statut === 'en_attente').length,
       expires: bdd.abonnements.filter((a) => a.statut === 'expire').length,
       mrq: Math.round(mrq),

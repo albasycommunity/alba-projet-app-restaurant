@@ -10,6 +10,7 @@ import {
   FlameIcon,
   HeartIcon,
   LayoutGridIcon,
+  LockIcon,
   LogOutIcon,
   MoonIcon,
   PackageIcon,
@@ -17,12 +18,21 @@ import {
   ScanBarcodeIcon,
   SearchIcon,
   SunIcon,
+  UserRoundIcon,
   UsersIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAlba } from '@/lib/store'
 import { initialesDe, useAuth } from '@/lib/auth-contexte'
-import { Permission, Role } from '@/lib/auth'
+import {
+  LIBELLE_PALIER,
+  PAGE_ACCES_REFUSE,
+  Permission,
+  Role,
+  moduleAutorise,
+  palierMinimumPourModule,
+  type PalierAbonnement,
+} from '@/lib/auth'
 import { LogoMark } from '@/components/landing/logo'
 import { SyncPill } from '@/components/sync-pill'
 import { Notifs } from '@/components/notifs'
@@ -58,17 +68,54 @@ const SECONDAIRE: Entree[] = [
 
 export const NAV_COMPLET = [...PRINCIPAL, ...SECONDAIRE]
 
-/** Filtre les entrées selon le rôle et les permissions réelles du compte. */
-function entréesVisibles(
+type EntreeNavigation = {
+  entree: Entree
+  /** cible du clic : l'onglet, ou la page qui explique le verrou */
+  href: string
+  verrouille: boolean
+}
+
+/**
+ * Navigation à onglets TOUJOURS complets :
+ * - ADMIN : tous les onglets visibles ; un module hors palier porte un
+ *   cadenas et mène à la mise à niveau (découverte → palier 'pro' →
+ *   aucun verrou).
+ * - STAFF : tous les onglets de SERVICE visibles (les zones de gestion
+ *   Back-office/Abonnement n'existent jamais pour lui) ; un onglet hors
+ *   de ses permissions porte un cadenas et mène à /acces-refuse.
+ * L'onglet reste cliquable — c'est le cadenas qui informe, la
+ * redirection qui explique.
+ */
+function entreesNavigation(
   entrees: Entree[],
   utilisateur: { role: Role; permissions?: Permission[] } | null,
-) {
-  if (utilisateur?.role === Role.RESTAURANT_ADMIN) return entrees
+  palier: PalierAbonnement,
+): EntreeNavigation[] {
+  if (utilisateur?.role === Role.RESTAURANT_ADMIN) {
+    return entrees.map((entree) => {
+      const verrouille =
+        !!entree.permission && !moduleAutorise(palier, entree.permission)
+      return {
+        entree,
+        verrouille,
+        href: verrouille
+          ? `/abonnement/renouveler?plan=${palierMinimumPourModule(entree.permission!)}&raison=module-verrouille`
+          : entree.href,
+      }
+    })
+  }
   if (utilisateur?.role === Role.STAFF) {
     const permissions = utilisateur.permissions ?? []
-    return entrees.filter(
-      (e) => e.permission && permissions.includes(e.permission),
-    )
+    return entrees
+      .filter((e) => e.permission)
+      .map((entree) => {
+        const verrouille = !permissions.includes(entree.permission!)
+        return {
+          entree,
+          verrouille,
+          href: verrouille ? PAGE_ACCES_REFUSE : entree.href,
+        }
+      })
   }
   return []
 }
@@ -81,7 +128,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { indicateurs, etat } = useAlba()
-  const { utilisateur, restaurantNom, deconnecter } = useAuth()
+  const { utilisateur, restaurantNom, abonnement, deconnecter } = useAuth()
   const [clair, setClair] = useState(false)
   const [plus, setPlus] = useState(false)
   const [palette, setPalette] = useState(false)
@@ -120,13 +167,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     haccp: indicateurs.haccpRestant,
   }
 
-  // Navigation adaptée aux permissions réelles : un STAFF ne voit que ses
-  // zones ; l'ABONNEMENT et le back-office restent réservés à la gérante.
-  const principal = entréesVisibles(PRINCIPAL, utilisateur)
-  const secondaire = entréesVisibles(SECONDAIRE, utilisateur)
+  // Navigation à onglets complets : les verrous (cadenas) et leurs cibles
+  // sont calculés selon le rôle et le palier effectif de la session.
+  // Découverte → palier 'pro' → aucun verrou pour l'admin.
+  const palier = abonnement?.palier ?? 'starter'
+  const principal = entreesNavigation(PRINCIPAL, utilisateur, palier)
+  const secondaire = entreesNavigation(SECONDAIRE, utilisateur, palier)
 
   const alertesSecondaires = secondaire.reduce(
-    (n, e) => n + (e.alerte ? compteurs[e.alerte] : 0),
+    (n, e) => n + (e.entree.alerte ? compteurs[e.entree.alerte] : 0),
     0,
   )
 
@@ -166,19 +215,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </button>
 
         <nav aria-label="Navigation principale" className="flex flex-col gap-1">
-          {[...principal, ...secondaire].map((item) => {
+          {[...principal, ...secondaire].map(({ entree: item, verrouille, href }) => {
             const actif = estActif(pathname, item.href)
             const compte = item.alerte ? compteurs[item.alerte] : 0
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={href}
                 aria-current={actif ? 'page' : undefined}
+                title={
+                  verrouille
+                    ? `Inclus dans le plan ${LIBELLE_PALIER[palierMinimumPourModule(item.permission!)]}`
+                    : undefined
+                }
                 className={cn(
                   'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-300 ease-[var(--ease-organic)]',
                   actif
                     ? 'bg-primary/12 text-foreground'
                     : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
+                  verrouille && 'opacity-55',
                 )}
               >
                 <item.icon
@@ -188,7 +243,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   )}
                 />
                 {item.label}
-                {compte > 0 ? (
+                {verrouille ? (
+                  <LockIcon className="ml-auto size-3.5 shrink-0" />
+                ) : compte > 0 ? (
                   <span
                     className={cn(
                       'ml-auto min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-semibold tnum',
@@ -219,26 +276,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {clair ? <MoonIcon className="size-4" /> : <SunIcon className="size-4" />}
             {clair ? 'Mode nuit' : 'Mode terrasse'}
           </button>
-          <div className="flex items-center gap-2 rounded-lg bg-secondary/50 px-2 py-2">
-            <span className="flex size-7 items-center justify-center rounded-full bg-primary/20 text-[11px] font-semibold text-primary">
-              {initialesDe(utilisateur?.nom ?? 'Restaurant')}
-            </span>
-            <div className="flex min-w-0 flex-col leading-tight">
-              <span className="truncate text-xs font-medium">
-                {utilisateur?.nom ?? 'Restaurant'}
+          <div className="flex flex-col gap-1">
+            <Link
+              href="/mon-compte"
+              className="group flex items-center gap-2 rounded-lg bg-secondary/50 px-2 py-2 transition-colors hover:bg-secondary/80"
+            >
+              <span className="flex size-7 items-center justify-center rounded-full bg-primary/20 text-[11px] font-semibold text-primary">
+                {initialesDe(utilisateur?.nom ?? 'Restaurant')}
               </span>
-              <span className="truncate text-[11px] text-muted-foreground">
-                {utilisateur?.email ?? restaurantNom ?? 'alba'}
-              </span>
-            </div>
+              <div className="flex min-w-0 flex-1 flex-col leading-tight">
+                <span className="truncate text-xs font-medium">
+                  {utilisateur?.nom ?? 'Restaurant'}
+                </span>
+                <span className="truncate text-[11px] text-muted-foreground">
+                  {utilisateur?.email ?? restaurantNom ?? 'alba'}
+                </span>
+              </div>
+              <UserRoundIcon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+            </Link>
             <button
               type="button"
               onClick={deconnecter}
-              aria-label="Se déconnecter"
-              title="Se déconnecter"
-              className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+              className="flex items-center gap-2 rounded-lg px-2 py-2 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
             >
               <LogOutIcon className="size-4" />
+              Se déconnecter
             </button>
           </div>
         </div>
@@ -275,17 +337,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         aria-label="Navigation principale"
         className="glass fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border px-1 pb-[env(safe-area-inset-bottom)] pt-1 lg:hidden"
       >
-        {principal.map((item) => {
+        {principal.map(({ entree: item, verrouille, href }) => {
           const actif = estActif(pathname, item.href)
           const compte = item.alerte ? compteurs[item.alerte] : 0
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={href}
               aria-current={actif ? 'page' : undefined}
+              title={
+                verrouille
+                  ? `Inclus dans le plan ${LIBELLE_PALIER[palierMinimumPourModule(item.permission!)]}`
+                  : undefined
+              }
               className={cn(
                 'relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg py-2.5 text-[11px] font-medium transition-colors',
                 actif ? 'text-primary' : 'text-muted-foreground',
+                verrouille && 'opacity-55',
               )}
             >
               <span className="relative">
@@ -308,7 +376,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </span>
                 )}
               </span>
-              <span className="truncate">{item.short}</span>
+              <span className="flex items-center gap-1">
+                <span className="truncate">{item.short}</span>
+                {verrouille && <LockIcon className="size-3 shrink-0" />}
+              </span>
             </Link>
           )
         })}
@@ -338,24 +409,44 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         sous="Ce qui ne se gère pas en pleine rush."
       >
         <div className="flex flex-col gap-2">
-          {secondaire.map((item) => {
+          {secondaire.map(({ entree: item, verrouille, href }) => {
             const compte = item.alerte ? compteurs[item.alerte] : 0
             return (
               <Link
                 key={item.href}
-                href={item.href}
-                className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 transition-transform duration-300 ease-[var(--ease-spring)] active:scale-[0.98]"
+                href={href}
+                title={
+                  verrouille
+                    ? `Inclus dans le plan ${LIBELLE_PALIER[palierMinimumPourModule(item.permission!)]}`
+                    : undefined
+                }
+                className={cn(
+                  'flex items-center gap-3 rounded-xl border border-border bg-card p-4 transition-transform duration-300 ease-[var(--ease-spring)] active:scale-[0.98]',
+                  verrouille && 'opacity-55',
+                )}
               >
                 <item.icon className="size-5 text-primary" />
                 <span className="text-sm font-medium">{item.label}</span>
-                {compte > 0 && (
+                {verrouille ? (
+                  <LockIcon className="ml-auto size-4 shrink-0 text-muted-foreground" />
+                ) : compte > 0 ? (
                   <span className="ml-auto rounded-full bg-destructive/20 px-2 py-0.5 text-[11px] font-semibold text-destructive tnum">
                     {compte} à faire
                   </span>
-                )}
+                ) : null}
               </Link>
             )
           })}
+          <Link
+            href="/mon-compte"
+            className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 transition-transform duration-300 ease-[var(--ease-spring)] active:scale-[0.98]"
+          >
+            <UserRoundIcon className="size-5 text-primary" />
+            <span className="text-sm font-medium">Mon compte</span>
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              pointages · absences · mot de passe
+            </span>
+          </Link>
           <div className="mt-2 flex items-center gap-3 rounded-xl bg-secondary/50 p-4">
             <span className="flex size-9 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
               {initialesDe(utilisateur?.nom ?? 'Restaurant')}

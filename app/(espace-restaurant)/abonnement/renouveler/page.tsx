@@ -1,12 +1,15 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import {
   CheckCircle2Icon,
   CreditCardIcon,
-  InfoIcon,
+  LayoutDashboardIcon,
   LoaderIcon,
   LockKeyholeIcon,
+  PiggyBankIcon,
+  ReceiptTextIcon,
   SmartphoneIcon,
   UsersIcon,
   XCircleIcon,
@@ -21,13 +24,13 @@ import {
   type PalierAbonnement,
   type PlanAbonnement,
 } from '@/lib/auth'
-import { fcfa } from '@/lib/data'
+import { fcfa, nombreFormate } from '@/lib/data'
 
 type ModePaiementVue = { mode: ModePaiementAbonnement; numero: string }
 
 type Donnees = {
   abonnement: {
-    statut: 'actif' | 'essai' | 'expire' | 'en_attente'
+    statut: 'actif' | 'decouverte' | 'expire' | 'en_attente'
     plan: PlanAbonnement
     montant: number
     dateFin: string
@@ -42,6 +45,8 @@ type Donnees = {
 }
 
 const MESSAGES_RAISON: Record<string, string> = {
+  'activation-requise':
+    'Tu as exploré Alba en mode découverte. Tes 3 actions réelles (encaissements, création d’employés) sont consommées — choisis un plan pour continuer à encaisser, créer tes plats et développer ton équipe.',
   'module-verrouille':
     'Un module que tu essaies d’ouvrir n’est pas inclus dans ton plan actuel. Passe au plan Pro pour débloquer Stock, Hygiène et Pilotage.',
   'limite-staff':
@@ -50,9 +55,46 @@ const MESSAGES_RAISON: Record<string, string> = {
     'La gestion de plusieurs établissements est réservée au plan Premium.',
 }
 
+/** Caps commerciaux affichés sur chaque carte — affichage uniquement. */
+type CapsPlan = {
+  membresEquipe: string
+  commandesMois: number
+  clientsEnregistres: number
+  referencesStock: number | null
+  etablissements: number
+  modules: string
+}
+
+const CAPS_PLANS: Record<PalierAbonnement, CapsPlan> = {
+  starter: {
+    membresEquipe: '1',
+    commandesMois: 400,
+    clientsEnregistres: 50,
+    referencesStock: null,
+    etablissements: 1,
+    modules: 'Caisse, Cuisine, Équipe, Clients',
+  },
+  pro: {
+    membresEquipe: 'Illimitée',
+    commandesMois: 5_000,
+    clientsEnregistres: 1_000,
+    referencesStock: 150,
+    etablissements: 1,
+    modules: '+ Stock, Hygiène, Pilotage',
+  },
+  premium: {
+    membresEquipe: 'Illimitée',
+    commandesMois: 25_000,
+    clientsEnregistres: 10_000,
+    referencesStock: 1_000,
+    etablissements: 3,
+    modules: 'Tous + multi-établissements',
+  },
+}
+
 export default function PageRenouveler() {
   const [donnees, setDonnees] = useState<Donnees | null>(null)
-  const [palier, setPalier] = useState<PalierAbonnement>('starter')
+  const [palier, setPalier] = useState<PalierAbonnement>('pro')
   const [periodicite, setPeriodicite] = useState<PlanAbonnement>('mensuel')
   const [mode, setMode] = useState<ModePaiementAbonnement | null>(null)
   const [envoi, setEnvoi] = useState(false)
@@ -130,12 +172,26 @@ export default function PageRenouveler() {
   }, [parametresUrl, abonnementStatut])
 
   const statut = donnees?.abonnement?.statut
-  const offre = PLANS_ABONNEMENT[palier]
   const montant = montantPalier(palier, periodicite)
+  const economiesAnnuel =
+    12 * montantPalier(palier, 'mensuel') - montantPalier(palier, 'annuel')
   const modes = donnees?.paiement?.modes ?? []
   const naboopayActif = donnees?.paiement?.naboopayActif ?? false
   const naboopayMock = donnees?.paiement?.naboopayMock ?? false
   const numero = modes.find((m) => m.mode === mode)?.numero
+
+  const titreHeader =
+    raison === 'activation-requise'
+      ? 'Active ton restaurant'
+      : raison === 'module-verrouille'
+        ? 'Débloque ce module'
+        : 'Choisis ton plan'
+  const sousHeader =
+    raison === 'activation-requise'
+      ? 'Passe à un plan payant et tout redevient disponible en quelques secondes.'
+      : raison === 'module-verrouille'
+        ? MESSAGES_RAISON['module-verrouille']
+        : 'Continue à encaisser, créer des plats et gérer ton équipe sans limite.'
 
   async function payerEnLigne() {
     setNaboopayErreur(null)
@@ -225,14 +281,7 @@ export default function PageRenouveler() {
 
   return (
     <div className="flex flex-col">
-      <PageHeader
-        titre="Renouveler l’abonnement"
-        sous={
-          naboopayActif
-            ? 'Paiement automatique : choisis ton plan et paie en ligne — l’abonnement s’active instantanément. Le paiement manuel reste disponible en secours.'
-            : 'Paye par Wave, Orange Money ou Free Money. Dès réception, le super admin active l’abonnement et le back-office rouvre.'
-        }
-      />
+      <PageHeader titre={titreHeader} sous={sousHeader} />
 
       <div className="flex flex-col gap-4 p-4 sm:p-6 lg:p-8">
         {paiementReussi && abonnementStatut !== 'actif' && (
@@ -245,12 +294,42 @@ export default function PageRenouveler() {
           </div>
         )}
         {paiementReussi && abonnementStatut === 'actif' && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-success/30 bg-success/8 p-4">
-            <CheckCircle2Icon className="size-5 shrink-0 text-success" />
-            <p className="text-sm text-muted-foreground">
-              Paiement confirmé — ton abonnement est actif, le back-office est
-              rouvert.
-            </p>
+          <div className="animate-rise flex flex-col gap-4 rounded-xl border border-success/25 bg-success/8 p-5">
+            <div className="flex items-start gap-3">
+              <CheckCircle2Icon className="size-8 shrink-0 text-success" />
+              <div className="min-w-0 flex-1">
+                <p className="font-display text-base font-semibold">
+                  Bienvenue dans Alba — ton établissement est actif !
+                </p>
+                <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">
+                  Le back-office est rouvert. Voici trois actions pour bien
+                  démarrer :
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/caisse"
+                className="flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground transition-all duration-300 ease-[var(--ease-spring)] active:scale-[0.98]"
+              >
+                <ReceiptTextIcon className="size-4" />
+                Ouvrir la caisse
+              </Link>
+              <Link
+                href="/equipe"
+                className="flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-xs font-medium transition-colors hover:bg-secondary"
+              >
+                <UsersIcon className="size-4" />
+                Gérer mon équipe
+              </Link>
+              <Link
+                href="/back-office"
+                className="flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-xs font-medium transition-colors hover:bg-secondary"
+              >
+                <LayoutDashboardIcon className="size-4" />
+                Voir le back-office
+              </Link>
+            </div>
           </div>
         )}
         {paiementErreur && (
@@ -264,11 +343,17 @@ export default function PageRenouveler() {
         )}
 
         {raison && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/8 p-4">
+          <div
+            className={`flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/8 p-4 ${
+              raison === 'module-verrouille' ? 'justify-center' : ''
+            }`}
+          >
             <LockKeyholeIcon className="size-5 shrink-0 text-primary" />
-            <p className="text-sm text-muted-foreground">
-              {MESSAGES_RAISON[raison] ?? 'Ce passage au plan payant est requis.'}
-            </p>
+            {raison !== 'module-verrouille' && (
+              <p className="text-sm text-muted-foreground">
+                {MESSAGES_RAISON[raison] ?? 'Ce passage au plan payant est requis.'}
+              </p>
+            )}
           </div>
         )}
 
@@ -279,44 +364,6 @@ export default function PageRenouveler() {
               Ton abonnement est déjà actif jusqu'au{' '}
               {new Date(donnees.abonnement.dateFin).toLocaleDateString('fr-FR')}.
               Tu peux quand même renouveler par avance.
-            </p>
-          </div>
-        )}
-
-        {statut === 'essai' && donnees?.abonnement && (
-          <div
-            className={`flex flex-wrap items-center gap-2 rounded-xl border p-4 ${
-              donnees.abonnement.joursRestants >= 0
-                ? 'border-primary/30 bg-primary/8'
-                : 'border-destructive/25 bg-destructive/10'
-            }`}
-          >
-            <CheckCircle2Icon
-              className={
-                donnees.abonnement.joursRestants >= 0
-                  ? 'size-5 shrink-0 text-primary'
-                  : 'size-5 shrink-0 text-destructive'
-              }
-            />
-            <p className="text-sm text-muted-foreground">
-              {donnees.abonnement.joursRestants >= 0 ? (
-                <>
-                  Ton essai gratuit court jusqu'au{' '}
-                  <span className="font-medium text-foreground">
-                    {new Date(donnees.abonnement.dateFin).toLocaleDateString('fr-FR')}
-                  </span>
-                  {' '}({donnees.abonnement.joursRestants} jour
-                  {donnees.abonnement.joursRestants > 1 ? 's' : ''} restant
-                  {donnees.abonnement.joursRestants > 1 ? 's' : ''}). Passe au
-                  plan payant maintenant pour continuer sans interruption.
-                </>
-              ) : (
-                <>
-                  Ton essai gratuit est{' '}
-                  <span className="font-medium text-foreground">terminé</span>.
-                  Choisis un plan pour rouvrir le back-office.
-                </>
-              )}
             </p>
           </div>
         )}
@@ -360,60 +407,60 @@ export default function PageRenouveler() {
         )}
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {/* Choix du palier */}
-          <Card>
-            <CardTitle>1 · Choisis ton plan</CardTitle>
-            <div className="flex flex-col gap-3">
-              {PALIERS_ABONNEMENT.map((p) => {
-                const offrePalier = PLANS_ABONNEMENT[p]
-                const actif = palier === p
-                const pro = p === 'pro'
-                return (
-                  <div
-                    key={p}
-                    className={`rounded-xl border p-4 transition-all duration-300 ease-[var(--ease-spring)] ${
-                      actif
-                        ? 'border-primary/50 bg-primary/10'
-                        : pro
-                          ? 'border-primary/25 bg-primary/5'
-                          : 'border-border bg-background hover:border-primary/30'
-                    }`}
-                  >
-                    <button
-                      type="button"
+          <div className="flex flex-col gap-4">
+            {/* Choix du palier */}
+            <Card>
+              <CardTitle>1 · Choisis ton plan</CardTitle>
+              <div className="flex flex-col gap-3">
+                {PALIERS_ABONNEMENT.map((p) => {
+                  const offrePalier = PLANS_ABONNEMENT[p]
+                  const caps = CAPS_PLANS[p]
+                  const actif = palier === p
+                  const pro = p === 'pro'
+                  return (
+                    <div
+                      key={p}
                       onClick={() => setPalier(p)}
-                      className="flex w-full items-center gap-3 text-left"
+                      className={`cursor-pointer rounded-xl border p-4 transition-all duration-300 ease-[var(--ease-spring)] ${
+                        actif
+                          ? 'animate-halo border-primary/60 bg-primary/8 shadow'
+                          : 'border-border bg-background hover:border-primary/30'
+                      }`}
                     >
-                      <span
-                        className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                          actif ? 'border-primary' : 'border-border'
-                        }`}
-                      >
-                        {actif && <span className="size-2.5 rounded-full bg-primary" />}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-semibold">
-                            {offrePalier.libelle}
-                          </p>
-                          {pro && <Badge ton="primaire">Le plus populaire</Badge>}
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">
-                          {offrePalier.detail}
-                        </p>
+                      <div className="flex w-full items-center gap-3">
+                        <span
+                          className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                            actif ? 'border-primary' : 'border-border'
+                          }`}
+                        >
+                          {actif && <span className="size-2.5 rounded-full bg-primary" />}
+                        </span>
+                        <span className="text-sm font-semibold">
+                          {offrePalier.libelle}
+                        </span>
+                        {pro ? (
+                          <Badge ton="primaire">Le plus populaire</Badge>
+                        ) : p === 'premium' ? (
+                          <Badge ton="primaire">Pour les groupes</Badge>
+                        ) : null}
                       </div>
-                      <span className="font-display text-base font-semibold tnum">
-                        {fcfa(montantPalier(p, periodicite))}
-                      </span>
-                    </button>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-3 pl-8">
-                      <div className="flex overflow-hidden rounded-lg border border-border">
+                      <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="font-display text-lg font-semibold tnum">
+                          {fcfa(montantPalier(p, periodicite))}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          /{periodicite === 'mensuel' ? 'mois' : 'an'}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 inline-flex overflow-hidden rounded-lg border border-border">
                         {(['mensuel', 'annuel'] as PlanAbonnement[]).map((per) => (
                           <button
                             key={per}
                             type="button"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation()
                               setPalier(p)
                               setPeriodicite(per)
                             }}
@@ -427,26 +474,127 @@ export default function PageRenouveler() {
                           </button>
                         ))}
                       </div>
-                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <UsersIcon className="size-3" />
-                          {offrePalier.verrous.limiteStaff === null
-                            ? 'Équipe illimitée'
-                            : `${offrePalier.verrous.limiteStaff} membre${offrePalier.verrous.limiteStaff > 1 ? 's' : ''} d’équipe`}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <InfoIcon className="size-3" />
-                          {offrePalier.verrous.multiEtablissements
-                            ? 'Multi-établissements'
-                            : '1 établissement'}
-                        </span>
-                      </div>
+
+                      <ul className="mt-4 flex flex-col gap-2">
+                        <li className="flex items-center gap-2 text-xs">
+                          <CheckCircle2Icon className="size-3.5 shrink-0 text-primary" />
+                          <span className="text-muted-foreground">
+                            Membres d’équipe :{' '}
+                            <span className="font-semibold text-foreground tnum">
+                              {caps.membresEquipe}
+                            </span>
+                          </span>
+                        </li>
+                        <li className="flex items-center gap-2 text-xs">
+                          <CheckCircle2Icon className="size-3.5 shrink-0 text-primary" />
+                          <span className="text-muted-foreground">
+                            Commandes / mois :{' '}
+                            <span className="font-semibold text-foreground tnum">
+                              {nombreFormate(caps.commandesMois)}
+                            </span>
+                          </span>
+                        </li>
+                        <li className="flex items-center gap-2 text-xs">
+                          <CheckCircle2Icon className="size-3.5 shrink-0 text-primary" />
+                          <span className="text-muted-foreground">
+                            Clients enregistrés :{' '}
+                            <span className="font-semibold text-foreground tnum">
+                              {nombreFormate(caps.clientsEnregistres)}
+                            </span>
+                          </span>
+                        </li>
+                        <li className="flex items-center gap-2 text-xs">
+                          <CheckCircle2Icon className="size-3.5 shrink-0 text-primary" />
+                          <span className="text-muted-foreground">
+                            Références en stock :{' '}
+                            {caps.referencesStock === null ? (
+                              <span className="text-muted-foreground/50">—</span>
+                            ) : (
+                              <span className="font-semibold text-foreground tnum">
+                                {nombreFormate(caps.referencesStock)}
+                              </span>
+                            )}
+                          </span>
+                        </li>
+                        <li className="flex items-center gap-2 text-xs">
+                          <CheckCircle2Icon className="size-3.5 shrink-0 text-primary" />
+                          <span className="text-muted-foreground">
+                            Établissements :{' '}
+                            <span className="font-semibold text-foreground tnum">
+                              {caps.etablissements}
+                            </span>
+                          </span>
+                        </li>
+                        <li
+                          className={`mt-1 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${
+                            pro
+                              ? 'border border-primary/25 bg-primary/8'
+                              : 'bg-secondary/60'
+                          }`}
+                        >
+                          <span className="font-medium text-muted-foreground">
+                            Modules
+                          </span>
+                          <span
+                            className={`font-semibold ${
+                              pro ? 'text-primary' : 'text-foreground'
+                            }`}
+                          >
+                            {caps.modules}
+                          </span>
+                        </li>
+                      </ul>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+            </Card>
+
+            {/* Widget économies */}
+            <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card p-3.5">
+              {periodicite === 'mensuel' ? (
+                <PiggyBankIcon className="size-4 shrink-0 text-primary" />
+              ) : (
+                <CheckCircle2Icon className="size-4 shrink-0 text-success" />
+              )}
+              <p className="flex-1 text-xs leading-relaxed text-muted-foreground">
+                {periodicite === 'mensuel' ? (
+                  <>
+                    Passe au forfait{' '}
+                    <span className="font-semibold text-foreground">annuel</span>{' '}
+                    et économise{' '}
+                    <span className="font-semibold text-foreground tnum">
+                      {fcfa(economiesAnnuel)}
+                    </span>{' '}
+                    / an.
+                  </>
+                ) : (
+                  <>
+                    Forfait annuel :{' '}
+                    <span className="font-semibold text-foreground tnum">
+                      {fcfa(montant)}
+                    </span>{' '}
+                    avec{' '}
+                    <span className="font-semibold text-success">
+                      2 mois offerts
+                    </span>
+                    .
+                  </>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  setPeriodicite(periodicite === 'mensuel' ? 'annuel' : 'mensuel')
+                }
+                className="shrink-0 text-[11px] font-medium text-primary underline underline-offset-2"
+              >
+                {periodicite === 'mensuel'
+                  ? 'Passer à l’annuel'
+                  : 'Revenir au mensuel'}
+              </button>
             </div>
-          </Card>
+          </div>
 
           {/* Paiement */}
           <div className="flex flex-col gap-4">

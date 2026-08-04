@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Role } from '@/lib/auth'
-import { abonnementDeRestaurant, lireBdd } from '@/lib/server/bdd'
+import {
+  abonnementDeRestaurant,
+  decouverteActionsRestantes,
+  lireBdd,
+  palierDeRestaurant,
+} from '@/lib/server/bdd'
 import { sessionDepuisRequete } from '@/lib/server/auth'
 
 export const dynamic = 'force-dynamic'
@@ -40,6 +45,13 @@ export async function GET(req: NextRequest) {
           statut: abonnement.statut,
           dateFin: abonnement.dateFin,
           montant: abonnement.montant,
+          // Palier EFFECTIF (relu du store) : 'pro' en découverte, sinon le
+          // palier commercial — il pilote les verrous côté interface.
+          palier: await palierDeRestaurant(utilisateur.restaurantId!),
+          // Compteur d'actions de découverte — null hors mode découverte.
+          decouverteActionsRestantes: await decouverteActionsRestantes(
+            utilisateur.restaurantId!,
+          ),
         }
       : null,
   })

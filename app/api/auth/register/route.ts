@@ -1,18 +1,12 @@
 import { hashSync } from 'bcryptjs'
 import { NextRequest, NextResponse } from 'next/server'
+import { Role, dateIso, destinationPour, nouveauId } from '@/lib/auth'
 import {
-  Role,
-  nouveauId,
-  dateIso,
-  palierValide,
-  type PalierAbonnement,
-  type PlanAbonnement,
-} from '@/lib/auth'
-import {
-  creerRestaurantEnEssai,
+  creerRestaurantEnDecouverte,
   muterBdd,
   trouverUtilisateurParEmail,
 } from '@/lib/server/bdd'
+import { cookieSession, signerSession } from '@/lib/server/auth'
 import { reponseTropDeRequetes, requeteAutorisee } from '@/lib/server/rate-limit'
 import { logger } from '@/lib/server/logger'
 
@@ -41,12 +35,14 @@ export async function POST(req: NextRequest) {
     typeof corps?.nomRestaurant === 'string' ? corps.nomRestaurant.trim() : ''
   const quartier =
     typeof corps?.quartier === 'string' ? corps.quartier.trim() : ''
-  const plan: PlanAbonnement | null =
-    corps?.plan === 'annuel' ? 'annuel' : corps?.plan === 'mensuel' ? 'mensuel' : null
-  // Palier choisi sur la landing — validé par le serveur (fail-closed → Starter).
-  const palier: PalierAbonnement = palierValide(corps?.palier)
-    ? corps.palier
-    : 'starter'
+  // Type de compte explicite : `restaurant` (back-office) ou `client`
+  // (Carte de Fidélité). Défaut `client` — comportement historique conservé.
+  const typeCompte: 'restaurant' | 'client' =
+    corps?.type === 'restaurant' ? 'restaurant' : 'client'
+  const suivant =
+    typeof corps?.suivant === 'string' && corps.suivant
+      ? corps.suivant
+      : null
 
   if (nom.length < 2 || nom.length > 100) {
     return NextResponse.json(
@@ -79,10 +75,11 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Inscription gérant : un plan a été choisi sur la landing → le restaurant
-  // démarre avec DUREE_ESSAI_JOURS jours d'essai gratuit. Aucune session
-  // n'est créée : l'utilisateur se connecte ensuite.
-  if (plan) {
+  // Inscription gérant : le restaurant démarre en MODE DÉCOUVERTE (accès
+  // complet, sans paiement ni échéance). La session est créée immédiatement
+  // — le gérant arrive directement dans son back-office, sans étape de
+  // connexion séparée.
+  if (typeCompte === 'restaurant') {
     if (nomRestaurant.length < 2 || nomRestaurant.length > 120) {
       return NextResponse.json(
         { erreur: 'Indique le nom de ton restaurant (2 à 120 caractères).' },
@@ -95,19 +92,35 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       )
     }
-    await creerRestaurantEnEssai({
+    const { admin } = await creerRestaurantEnDecouverte({
       nom: nomRestaurant,
       quartier: quartier || 'Dakar',
       gerant: nom,
       email,
       motDePasse,
-      plan,
-      palier,
     })
-    return NextResponse.json(
-      { ok: true, compte: 'restaurant', plan, palier },
+    const token = await signerSession({
+      id: admin.id,
+      email: admin.email,
+      nom: admin.nom,
+      role: admin.role,
+      restaurantId: admin.restaurantId,
+      permissions: admin.permissions ?? [],
+    })
+    const reponse = NextResponse.json(
+      {
+        ok: true,
+        compte: 'restaurant',
+        destination: destinationPour(
+          admin.role,
+          admin.permissions ?? [],
+          suivant,
+        ),
+      },
       { status: 201 },
     )
+    cookieSession(reponse, token)
+    return reponse
   }
 
   // Inscription client (Carte de Fidélité) — comportement historique.

@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { hashSync } from 'bcryptjs'
 import {
   Role,
   TOUTES_LES_PERMISSIONS,
   type Permission,
 } from '@/lib/auth'
+import { aujourdhuiIso } from '@/lib/rh'
+import { logger } from '@/lib/server/logger'
 import {
+  consommerActionDecouverte,
   creerPersonnel,
+  decouverteActionsRestantes,
   lireBdd,
   trouverUtilisateurParEmail,
 } from '@/lib/server/bdd'
 import { exigerRole } from '@/lib/server/auth'
+import { creerFicheRh } from '@/lib/server/rh'
+import { reponseQuotaDecouverteEpuise } from '@/lib/server/decouverte'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,6 +88,7 @@ export async function POST(req: NextRequest) {
   const email = typeof corps?.email === 'string' ? corps.email.trim() : ''
   const motDePasse =
     typeof corps?.motDePasse === 'string' ? corps.motDePasse : ''
+  const poste = typeof corps?.poste === 'string' ? corps.poste.trim() : ''
   const permissions = validerPermissions(corps?.permissions)
 
   if (nom.length < 2) {
@@ -103,6 +109,12 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     )
   }
+  if (poste.length < 2) {
+    return NextResponse.json(
+      { erreur: 'Indique le poste du membre (ex. : Caissière, Cuisinier).' },
+      { status: 400 },
+    )
+  }
   if (!permissions) {
     return NextResponse.json(
       { erreur: 'Coche au moins une permission pour ce membre.' },
@@ -116,6 +128,20 @@ export async function POST(req: NextRequest) {
       { erreur: 'Un compte existe déjà avec cet email.' },
       { status: 409 },
     )
+  }
+
+  // Quota de découverte : en mode découverte, créer un employé est une
+  // action réelle. Consommation atomique avant création — quota épuisé ou
+  // course perdue → 402 (activation requise). Hors découverte : inchangé.
+  const actionsDecouverte = await decouverteActionsRestantes(restaurantId)
+  if (actionsDecouverte !== null) {
+    if (actionsDecouverte === 0) {
+      return reponseQuotaDecouverteEpuise()
+    }
+    const consommation = await consommerActionDecouverte(restaurantId)
+    if (!consommation.ok) {
+      return reponseQuotaDecouverteEpuise()
+    }
   }
 
   const creation = await creerPersonnel({
@@ -139,6 +165,34 @@ export async function POST(req: NextRequest) {
         planRequis: 'pro',
       },
       { status: 403 },
+    )
+  }
+
+  // La fiche RH (poste, date d'embauche) naît avec le compte : elle sert
+  // ensuite à l'onglet RH et à l'espace « Mon compte » de l'employé.
+  if (!creation.ok) {
+    logger('rh', 'erreur', 'Création du personnel inattendue sans raison connue')
+    return NextResponse.json(
+      { erreur: 'La création du compte a échoué. Réessaie.' },
+      { status: 500 },
+    )
+  }
+  try {
+    await creerFicheRh({
+      utilisateurId: creation.id,
+      poste,
+      dateEmbauche: aujourdhuiIso(),
+    })
+  } catch {
+    logger('rh', 'erreur', 'Échec création fiche RH à l’inscription du personnel', {
+      utilisateurId: creation.id,
+    })
+    return NextResponse.json(
+      {
+        ok: false,
+        erreur: 'Le compte a été créé, mais sa fiche RH n’a pas pu être initialisée. Réessaie ou complète-la depuis l’onglet RH.',
+      },
+      { status: 500 },
     )
   }
 

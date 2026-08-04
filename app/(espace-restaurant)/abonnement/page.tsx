@@ -17,11 +17,12 @@ type DonneesAbonnement = {
     id: string
     plan: 'mensuel' | 'annuel'
     palier: 'starter' | 'pro' | 'premium'
-    statut: 'actif' | 'essai' | 'expire' | 'en_attente'
+    statut: 'actif' | 'decouverte' | 'expire' | 'en_attente'
     dateDebut: string
     dateFin: string
     montant: number
     joursRestants: number
+    decouverteActionsRestantes: number | null
   } | null
   paiements: {
     id: string
@@ -55,6 +56,7 @@ export default function PageAbonnement() {
 
   const abonnement = donnees?.abonnement ?? null
   const statut = abonnement?.statut ?? 'expire'
+  const actionsRestantes = abonnement?.decouverteActionsRestantes ?? 3
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('fr-FR', {
@@ -91,7 +93,7 @@ export default function PageAbonnement() {
                 libelle="Statut"
                 valeur={
                   <Badge
-                    ton={statut === 'actif' ? 'succes' : statut === 'essai' ? 'primaire' : statut === 'en_attente' ? 'attention' : 'alerte'}
+                    ton={statut === 'actif' ? 'succes' : statut === 'decouverte' ? 'primaire' : statut === 'en_attente' ? 'attention' : 'alerte'}
                     className="text-sm"
                   >
                     {LIBELLES_STATUT[statut]}
@@ -118,27 +120,32 @@ export default function PageAbonnement() {
               />
             </div>
 
-            {statut === 'essai' && (
-              <div className="animate-halo rounded-xl border border-primary/30 bg-primary/8 p-4">
-                <div className="flex flex-col gap-2">
+            {statut === 'decouverte' && (
+              <div className="animate-halo flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/8 p-4">
+                <ReceiptTextIcon className="size-5 shrink-0 text-primary" />
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">
-                    Essai gratuit — {abonnement.joursRestants} jour
-                    {abonnement.joursRestants > 1 ? 's' : ''} restant
-                    {abonnement.joursRestants > 1 ? 's' : ''}
+                    Mode découverte — tu explores Alba avec des données d'exemple
                   </p>
-                  <Progress valeur={Math.max(0, (abonnement.joursRestants / 15) * 100)} ton="primaire" />
-                  <p className="text-xs text-muted-foreground">
-                    {abonnement.joursRestants <= 7
-                      ? `L'essai se termine bientôt. Choisis ton plan payant (${PLANS_ABONNEMENT[abonnement.palier].libelle.toLowerCase()}) pour continuer sans interruption.`
-                      : `Profite de tout le back-office pendant ton essai. À l'échéance, passe au plan ${PLANS_ABONNEMENT[abonnement.palier].libelle.toLowerCase()} pour continuer.`}
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {actionsRestantes > 0 ? (
+                      <>
+                        Il te reste{' '}
+                        <span className="font-semibold text-foreground tnum">
+                          {actionsRestantes} action{actionsRestantes > 1 ? 's' : ''} réelle{actionsRestantes > 1 ? 's' : ''}
+                        </span>{' '}
+                        (encaissements, création d'employés). Quand tu es prêt :
+                      </>
+                    ) : (
+                      'Actions réelles épuisées — active Alba pour continuer.'
+                    )}
                   </p>
                 </div>
                 <Link
-                  href="/abonnement/renouveler"
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground"
+                  href="/abonnement/renouveler?raison=activation-requise"
+                  className="rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground"
                 >
-                  Passer au plan payant
-                  <ArrowRightIcon className="size-3.5" />
+                  Activer mon restaurant
                 </Link>
               </div>
             )}

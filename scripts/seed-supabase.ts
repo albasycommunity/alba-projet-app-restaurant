@@ -55,6 +55,7 @@ const comptes: CompteDemo[] = [
   { email: 'chef@chezfatou.sn', motDePasse: 'Fatou2026!', nom: 'Fatou Ndiaye', role: 'RESTAURANT_ADMIN', restaurantId: 'r1', permissions: [] },
   { email: 'gora@baobabbleu.sn', motDePasse: 'Gora2026!', nom: 'Gora Ndiaye', role: 'RESTAURANT_ADMIN', restaurantId: 'r2', permissions: [] },
   { email: 'adama@teranga.sn', motDePasse: 'Adama2026!', nom: 'Adama Ba', role: 'RESTAURANT_ADMIN', restaurantId: 'r3', permissions: [] },
+  { email: 'testdecouverte@demo.sn', motDePasse: 'Decouverte2026!', nom: 'Awa Diop', role: 'RESTAURANT_ADMIN', restaurantId: 'r4', permissions: [] },
   { email: 'caissiere@chezfatou.sn', motDePasse: 'Caissiere2026!', nom: 'Aïssatou Diallo', role: 'STAFF', restaurantId: 'r1', permissions: ['caisse', 'clients'] },
   { email: 'cuisinier@chezfatou.sn', motDePasse: 'Cuisinier2026!', nom: 'Moussa Sow', role: 'STAFF', restaurantId: 'r1', permissions: ['cuisine'] },
   { email: 'client@demo.sn', motDePasse: 'Client2026!', nom: 'Aminata Diallo', role: 'CLIENT', restaurantId: null, permissions: [] },
@@ -64,12 +65,14 @@ const restaurants = [
   { id: 'r1', nom: 'Chez Fatou', quartier: 'Ngor, Dakar', gerant: 'Fatou Ndiaye', actif: true, cree_le: ilYAJours(220) },
   { id: 'r2', nom: 'Le Baobab Bleu', quartier: 'Pointe des Almadies', gerant: 'Gora Ndiaye', actif: true, cree_le: ilYAJours(140) },
   { id: 'r3', nom: 'Teranga Grill', quartier: 'Plateau, Dakar', gerant: 'Adama Ba', actif: true, cree_le: ilYAJours(65) },
+  { id: 'r4', nom: 'Chez Awa', quartier: 'Sacré-Cœur, Dakar', gerant: 'Awa Diop', actif: true, cree_le: ilYAJours(2) },
 ]
 
 const abonnements = [
-  { id: 'a1', restaurant_id: 'r1', plan: 'mensuel', palier: 'pro', statut: 'actif', date_debut: ilYAJours(20), date_fin: dansJours(17), montant: 35_000 },
-  { id: 'a2', restaurant_id: 'r2', plan: 'mensuel', palier: 'starter', statut: 'expire', date_debut: ilYAJours(55), date_fin: ilYAJours(5), montant: 15_000 },
-  { id: 'a3', restaurant_id: 'r3', plan: 'annuel', palier: 'starter', statut: 'actif', date_debut: ilYAJours(30), date_fin: dansJours(182), montant: 150_000 },
+  { id: 'a1', restaurant_id: 'r1', plan: 'mensuel', palier: 'pro', statut: 'actif', date_debut: ilYAJours(20), date_fin: dansJours(17), montant: 35_000, decouverte_actions_restantes: 3 },
+  { id: 'a2', restaurant_id: 'r2', plan: 'mensuel', palier: 'starter', statut: 'expire', date_debut: ilYAJours(55), date_fin: ilYAJours(5), montant: 15_000, decouverte_actions_restantes: 3 },
+  { id: 'a3', restaurant_id: 'r3', plan: 'annuel', palier: 'starter', statut: 'actif', date_debut: ilYAJours(30), date_fin: dansJours(182), montant: 150_000, decouverte_actions_restantes: 3 },
+  { id: 'a4', restaurant_id: 'r4', plan: 'mensuel', palier: null, statut: 'decouverte', date_debut: ilYAJours(2), date_fin: dansJours(3648), montant: 0, decouverte_actions_restantes: 3 },
 ]
 
 const paiements = [
@@ -103,13 +106,17 @@ async function viderDonneesDemo() {
   // pour repartir d'un journal de démo propre.
   const { data: webhooks } = await supabase.from('webhooks_paiement').select('id')
   await supprimer('webhooks_paiement', 'id', (webhooks ?? []).map((w: { id: string }) => w.id))
-  await supprimer('transactions_paiement', 'restaurant_id', ['r1', 'r2', 'r3'])
-  await supprimer('commandes_clients', 'restaurant_id', ['r1', 'r2', 'r3'])
-  await supprimer('paiements', 'abonnement_id', ['a1', 'a2', 'a3'])
+  await supprimer('transactions_paiement', 'restaurant_id', ['r1', 'r2', 'r3', 'r4'])
+  await supprimer('commandes_clients', 'restaurant_id', ['r1', 'r2', 'r3', 'r4'])
+  await supprimer('paiements', 'abonnement_id', ['a1', 'a2', 'a3', 'a4'])
   await supprimer('fidelite', 'user_id', idsUtilisateurs)
-  await supprimer('abonnements', 'id', ['a1', 'a2', 'a3'])
+  // Tables RH (FK vers utilisateurs) — à vider avant la suppression des comptes.
+  await supprimer('absences', 'utilisateur_id', idsUtilisateurs)
+  await supprimer('pointages', 'utilisateur_id', idsUtilisateurs)
+  await supprimer('fiches_rh', 'utilisateur_id', idsUtilisateurs)
+  await supprimer('abonnements', 'id', ['a1', 'a2', 'a3', 'a4'])
   await supprimer('utilisateurs', 'email', emails)
-  await supprimer('restaurants', 'id', ['r1', 'r2', 'r3'])
+  await supprimer('restaurants', 'id', ['r1', 'r2', 'r3', 'r4'])
   console.log(
     `[seed] données de démo supprimées (${idsUtilisateurs.length} comptes, webhooks, transactions, paiements, commandes)`,
   )

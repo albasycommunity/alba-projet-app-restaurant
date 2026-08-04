@@ -9,13 +9,22 @@ import {
   useState,
 } from 'react'
 import { useRouter } from 'next/navigation'
-import { Role, type SessionUtilisateur } from '@/lib/auth'
+import {
+  Role,
+  type PalierAbonnement,
+  type SessionUtilisateur,
+  type StatutAbonnement,
+} from '@/lib/auth'
 
 type SessionAbonnement = {
   plan: 'mensuel' | 'annuel'
-  statut: 'actif' | 'essai' | 'expire' | 'en_attente'
+  statut: StatutAbonnement
   dateFin: string
   montant: number
+  /** Palier effectif du restaurant — 'pro' en mode découverte. */
+  palier: PalierAbonnement
+  /** Actions de découverte restantes — null hors mode découverte. */
+  decouverteActionsRestantes: number | null
 }
 
 type ContexteAuth = {
