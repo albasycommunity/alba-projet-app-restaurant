@@ -114,11 +114,15 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    overflow-x: hidden;
+  }
   body {
     @apply bg-background text-foreground;
     -webkit-tap-highlight-color: transparent;
-  }
-  /* Aucun sautillement visuel sur les montants en caisse */
+    overflow-x: hidden;
+  }  
+/* Aucun sautillement visuel sur les montants en caisse */
   .tnum {
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum' 1;
