@@ -273,7 +273,7 @@ function PageConnexion() {
               Crée ta Carte de Fidélité
             </Link>
           </p>
-
+          {process.env.NEXT_PUBLIC_DEMO_MODE === 'true' && (
           <div className="mt-8 rounded-2xl border border-border bg-card/60 p-4">
             <p className="flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
               <LockKeyholeIcon className="size-3.5" />
@@ -309,6 +309,7 @@ function PageConnexion() {
               ))}
             </ul>
           </div>
+         )}
         </div>
       </main>
     </div>
