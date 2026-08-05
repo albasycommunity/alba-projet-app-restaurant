@@ -11,6 +11,7 @@ import { Badge, Card, CardTitle, PageHeader } from '@/components/kit'
 import { CountUp } from '@/components/count-up'
 import { NOM_COOKIE_SESSION } from '@/lib/auth'
 import { verifierSession } from '@/lib/server/auth'
+import { PilotageConsulte } from '@/components/onboarding/onboarding-client'
 import {
   AFFLUENCE,
   CA_JOUR,
@@ -42,6 +43,8 @@ export default async function PilotagePage() {
   const prenom = await prenomConnexion()
   return (
     <div className="flex flex-col">
+      {/* Étape 5 de l'onboarding : cette visite réelle coûte le flag « stats ». */}
+      <PilotageConsulte />
       <PageHeader
         titre={`Bonjour ${prenom}`}
         sous="Voilà où en est ta journée. Le rapport partira tout seul sur WhatsApp à la fermeture."

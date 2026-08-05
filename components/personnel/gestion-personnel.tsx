@@ -18,6 +18,7 @@ import {
 } from '@/lib/auth'
 import { Badge, Card, CardTitle, EmptyState, Sheet } from '@/components/kit'
 import { initialesDe } from '@/lib/auth-contexte'
+import { EVENEMENT_ONBOARDING_RAFRAICHIR } from '@/components/onboarding/onboarding-client'
 import { cn } from '@/lib/utils'
 
 type Membre = {
@@ -99,7 +100,15 @@ function GroupePermissions({
   )
 }
 
-export function GestionPersonnel() {
+export function GestionPersonnel({
+  mettreEnAvantCreation = false,
+}: {
+  /**
+   * Onboarding : pendant le parcours découverte, la création du premier
+   * membre est l'étape à faire — le bouton passe au premier plan.
+   */
+  mettreEnAvantCreation?: boolean
+}) {
   const [membres, setMembres] = useState<Membre[] | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [verrouPalier, setVerrouPalier] = useState<string | null>(null)
@@ -181,6 +190,9 @@ export function GestionPersonnel() {
       setVerrouPalier(null)
       setFormulaire({ nom: '', email: '', motDePasse: '', poste: '', permissions: [] })
       await charger()
+      // Onboarding : le 1er membre peut boucler le parcours — l'orchestrateur
+      // se rafraîchit tout de suite (pas besoin d'attendre une navigation).
+      window.dispatchEvent(new Event(EVENEMENT_ONBOARDING_RAFRAICHIR))
     } catch {
       setErreur('Le serveur ne répond pas.')
     } finally {
@@ -236,17 +248,26 @@ export function GestionPersonnel() {
   }
 
   return (
-    <Card>
+    <Card id="personnel">
       <CardTitle
         aside={
-          <button
-            type="button"
-            onClick={() => setCreation(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-transform duration-300 ease-[var(--ease-spring)] hover:scale-[1.03]"
-          >
-            <UserPlusIcon className="size-3.5" />
-            Ajouter un membre
-          </button>
+          <div className="flex items-center gap-2">
+            {mettreEnAvantCreation && (
+              <Badge ton="primaire">Étape du parcours</Badge>
+            )}
+            <button
+              type="button"
+              onClick={() => setCreation(true)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-transform duration-300 ease-[var(--ease-spring)] hover:scale-[1.03]',
+                mettreEnAvantCreation &&
+                  'animate-halo ring-2 ring-primary/50',
+              )}
+            >
+              <UserPlusIcon className="size-3.5" />
+              Ajouter un membre
+            </button>
+          </div>
         }
       >
         Personnel

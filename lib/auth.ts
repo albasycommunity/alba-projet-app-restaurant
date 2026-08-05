@@ -422,6 +422,47 @@ export type Restaurant = {
   gerant: string
   actif: boolean
   creeLe: string
+  /**
+   * Onboarding découverte (Sprint 5). Fail-closed par défaut `true` :
+   * un restaurant existant ne voit jamais le parcours. Seul un compte
+   * créé en découverte arrive avec `false`. Compatibilité ascendante :
+   * les lignes écrites avant la migration ne portent pas ce champ —
+   * `lireBdd()` le ramène à `true` pour rester invisible.
+   */
+  onboarding_masque: boolean
+  /**
+   * Étape 5 du parcours — les stats ont-elles été consultées ? Défaut
+   * `false`. Sans effet pour un restaurant masqué.
+   */
+  onboarding_stats_consultees: boolean
+}
+
+/**
+ * Parcours d'onboarding découverte (Sprint 5) — ordre d'affichage du
+ * guide. Partagé entre le serveur (calcul de la progression) et le
+ * client (affichage) : jamais de copie divergente.
+ */
+export const ETAPES_ONBOARDING = [
+  'profil',
+  'plat',
+  'vente',
+  'equipe',
+  'stats',
+] as const
+
+export type EtapeOnboarding = (typeof ETAPES_ONBOARDING)[number]
+
+export const TOTAL_ETAPES_ONBOARDING = ETAPES_ONBOARDING.length
+
+/**
+ * Progression calculée côté serveur en UN seul aller-retour. Le front
+ * n'a qu'à AFFICHER — jamais à recalculer une étape.
+ */
+export type ProgressionOnboarding = {
+  /** Le parcours est-il visible pour ce restaurant ? (`onboarding_masque`) */
+  visible: boolean
+  etapes: Record<EtapeOnboarding, boolean>
+  accomplies: number
 }
 
 /**

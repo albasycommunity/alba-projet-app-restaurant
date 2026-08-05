@@ -25,6 +25,9 @@ import { nouveauId } from '@/lib/auth'
 export type PlatEditable = Plat & {
   actif: boolean
   rupture: boolean
+  /** Premier plat créé par le gérant (onboarding) — les plats de
+   *  démonstration ne comptent jamais comme une création réelle. */
+  cree: boolean
 }
 
 const CLE = 'alba:menu:v1'
@@ -46,7 +49,7 @@ type ContexteMenu = {
 const Contexte = createContext<ContexteMenu | null>(null)
 
 function initial(): PlatEditable[] {
-  return MENU.map((p) => ({ ...p, actif: true, rupture: false }))
+  return MENU.map((p) => ({ ...p, actif: true, rupture: false, cree: false }))
 }
 
 export function MenuProvider({ children }: { children: React.ReactNode }) {
@@ -58,7 +61,11 @@ export function MenuProvider({ children }: { children: React.ReactNode }) {
       if (brut) {
         const relu = JSON.parse(brut) as PlatEditable[]
         if (Array.isArray(relu) && relu.length > 0) {
-          setPlats(relu)
+          // Volume non récent : pas de champ `cree` — jamais considérer un
+          // plat historique comme une création réelle du gérant (onboarding).
+          setPlats(
+            relu.map((p) => ({ ...p, cree: p.cree === true })),
+          )
           return
         }
       }
@@ -101,6 +108,8 @@ export function MenuProvider({ children }: { children: React.ReactNode }) {
             recette: [],
             actif: true,
             rupture: false,
+            // Une vraie création du gérant (onboarding, étape plat).
+            cree: true,
           },
         ]),
       modifierPlat: (id, patch) =>

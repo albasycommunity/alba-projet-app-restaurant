@@ -19,6 +19,7 @@ import { useAlba } from '@/lib/store'
 import { useAuth } from '@/lib/auth-contexte'
 import { useMenu } from '@/components/menu-store'
 import { GestionPersonnel } from '@/components/personnel/gestion-personnel'
+import { useProgressionOnboarding } from '@/components/onboarding/onboarding-client'
 import { CATEGORIES, fcfa, type Categorie } from '@/lib/data'
 
 const OUTILS = [
@@ -45,6 +46,12 @@ export default function PageBackOffice() {
   const { indicateurs, etat } = useAlba()
   const { utilisateur } = useAuth()
   const { plats, ajouterPlat, modifierPlat, basculerRupture, retirerPlat } = useMenu()
+
+  const progression = useProgressionOnboarding()
+  // Pendant le parcours, la création du premier membre est le geste à
+  // faire : le bouton de la section Personnel est mis en avant.
+  const equipeProchaine =
+    progression?.visible === true && !progression.etapes.equipe
 
   const [abonnement, setAbonnement] = useState<AbonnementInfo['abonnement'] | null>(null)
   const [formulaire, setFormulaire] = useState(false)
@@ -182,7 +189,7 @@ export default function PageBackOffice() {
         </div>
 
         {/* Gestion du menu */}
-        <Card>
+        <Card id="gestion-menu">
           <CardTitle
             aside={
               <Badge ton="neutre">
@@ -276,7 +283,7 @@ export default function PageBackOffice() {
         </div>
 
         {/* Personnel : comptes STAFF, permissions, désactivation */}
-        <GestionPersonnel />
+        <GestionPersonnel mettreEnAvantCreation={equipeProchaine} />
       </div>
 
       {/* Formulaire nouveau plat */}

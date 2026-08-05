@@ -168,10 +168,10 @@ function erreurBdd(operation: string, erreur: unknown): never {
 type Ligne = Record<string, unknown>
 
 function restaurantVersLigne(r: Restaurant): Ligne {
-  return { id: r.id, nom: r.nom, quartier: r.quartier, gerant: r.gerant, actif: r.actif, cree_le: r.creeLe }
+  return { id: r.id, nom: r.nom, quartier: r.quartier, gerant: r.gerant, actif: r.actif, cree_le: r.creeLe, onboarding_masque: r.onboarding_masque, onboarding_stats_consultees: r.onboarding_stats_consultees }
 }
 function restaurantDepuisLigne(l: Record<string, unknown>): Restaurant {
-  return { id: String(l.id), nom: String(l.nom), quartier: String(l.quartier), gerant: String(l.gerant), actif: Boolean(l.actif), creeLe: iso(String(l.cree_le))! }
+  return { id: String(l.id), nom: String(l.nom), quartier: String(l.quartier), gerant: String(l.gerant), actif: Boolean(l.actif), creeLe: iso(String(l.cree_le))!, onboarding_masque: l.onboarding_masque !== undefined ? Boolean(l.onboarding_masque) : true, onboarding_stats_consultees: l.onboarding_stats_consultees !== undefined ? Boolean(l.onboarding_stats_consultees) : false }
 }
 function utilisateurVersLigne(u: Utilisateur): Ligne {
   return { id: u.id, email: u.email, password_hash: u.password_hash, nom: u.nom, role: u.role, restaurant_id: u.restaurantId, actif: u.actif, permissions: u.permissions, cree_le: u.creeLe }
@@ -687,6 +687,11 @@ export async function creerRestaurantAvecAbonnement(input: {
       gerant: input.gerant,
       actif: true,
       creeLe: dateIso(maintenant),
+      // Payant et actif : jamais d'onboarding — l'accompagnement découverte
+      // est réservé au mode découverte (et le défaut SQL `true` masque
+      // déjà l'existant, fail-closed).
+      onboarding_masque: true,
+      onboarding_stats_consultees: false,
     }
     const admin: Utilisateur = {
       id: nouveauId('u'),
@@ -739,6 +744,12 @@ export async function creerRestaurantEnDecouverte(input: {
       gerant: input.gerant,
       actif: true,
       creeLe: dateIso(maintenant),
+      // UNIQUE point de naissance de l'onboarding (Sprint 5) : un compte
+      // découverte arrive avec `onboarding_masque: false` — partout
+      // ailleurs le défaut `true` garde l'existant invisible. Ne jamais
+      // forcer `false` depuis un autre chemin.
+      onboarding_masque: false,
+      onboarding_stats_consultees: false,
     }
     const admin: Utilisateur = {
       id: nouveauId('u'),
@@ -809,6 +820,35 @@ export async function consommerActionDecouverte(restaurantId: string): Promise<
     resultat = { ok: true, restantes: restantes - 1 }
   })
   return resultat
+}
+
+/**
+ * Onboarding (Sprint 5) : bascule le masquage du parcours pour un
+ * restaurant. Les deux sorties permanentes (« Je connais déjà » et
+ * « Ne plus afficher ») passent ici — et uniquement ici. Ne jamais
+ * réactiver le parcours pour un compte payant : hors découverte, rien
+ * ne doit rouvrir le guide.
+ */
+export async function marquerOnboardingMasque(
+  restaurantId: string,
+  masque: boolean,
+) {
+  await muterBdd((bdd) => {
+    const restaurant = bdd.restaurants.find((r) => r.id === restaurantId)
+    if (restaurant) restaurant.onboarding_masque = masque
+  })
+}
+
+/**
+ * Étape 5 du parcours : les stats ont-elles été consultées ? Seule étape
+ * non déductible des données (déclencheur : la visite réelle de la page
+ * Pilotage, signalée par le client — jamais auto-déclarée à la volée).
+ */
+export async function marquerPilotageConsulte(restaurantId: string) {
+  await muterBdd((bdd) => {
+    const restaurant = bdd.restaurants.find((r) => r.id === restaurantId)
+    if (restaurant) restaurant.onboarding_stats_consultees = true
+  })
 }
 
 /**
