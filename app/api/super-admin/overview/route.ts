@@ -36,9 +36,9 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  const admins = bdd.utilisateurs.filter(
-    (u) => u.role === Role.RESTAURANT_ADMIN,
-  )
+  const admins = bdd.utilisateurs
+    .filter((u) => u.role === Role.RESTAURANT_ADMIN)
+    .map(({ password_hash: _nonEnvoie, ...admin }) => admin)
 
   return NextResponse.json({
     stats: {
