@@ -59,9 +59,12 @@ const ICONES: Record<EtapeOnboarding, typeof StoreIcon> = {
 /**
  * « Y aller » mène à la section concernée : un lien, ou un ancrage de la
  * même page (menu / personnel — le guide s'ouvre depuis le back-office).
+ * L'étape « profil » n'a pas de cible : elle est déjà accomplie à
+ * l'inscription (nom + quartier) et aucun écran ne permet encore de la
+ * modifier — pas de lien d'action sur une étape déjà faite.
  */
 const CIBLES: Record<EtapeOnboarding, string> = {
-  profil: '/mon-compte',
+  profil: '',
   plat: '#gestion-menu',
   vente: '/caisse',
   equipe: '#personnel',
@@ -246,15 +249,37 @@ export function OnboardingDecouverte() {
     setProgression((p) => (p ? { ...p, visible: false } : p))
   }
 
-  /** Cible du guide : ancrage local (même page) ou navigation. */
+  /** Cible du guide : ancrage local (même page) ou navigation. Pour un
+   *  ancrage, on attend que le Sheet soit réellement démonté (le modal
+   *  verrouille le scroll de la page via `body.overflow`) : deux frames,
+   *  puis scroll doux, avec repli instantané si le smooth n'a pas bougé. */
   function allerVers(cible: string) {
     setGuideOuvert(false)
+    if (!cible) return
     if (cible.startsWith('#')) {
-      window.setTimeout(() => {
-        document
-          .getElementById(cible.slice(1))
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 200)
+      window.requestAnimationFrame(() =>
+        window.requestAnimationFrame(() => {
+          const cibleDom = document.getElementById(cible.slice(1))
+          if (!cibleDom) return
+          const avant = window.scrollY
+          try {
+            cibleDom.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          } catch {
+            // navigateur sans smooth scroll : on y va d'un coup
+            cibleDom.scrollIntoView({ behavior: 'auto', block: 'start' })
+            return
+          }
+          // Repli : si le smooth est resté bloqué (scroll encore verrouillé,
+          // comportement inexistant), on déplace d'un coup.
+          window.setTimeout(() => {
+            if (Math.abs(window.scrollY - avant) < 2) {
+              document
+                .getElementById(cible.slice(1))
+                ?.scrollIntoView({ behavior: 'auto', block: 'start' })
+            }
+          }, 450)
+        }),
+      )
       return
     }
     router.push(cible)
@@ -417,7 +442,7 @@ export function OnboardingDecouverte() {
                           <QuotaVente />
                         )}
 
-                        {prochain && (
+                        {prochain && cible && (
                           <div className="mt-2">
                             <button
                               type="button"

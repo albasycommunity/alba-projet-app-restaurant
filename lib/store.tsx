@@ -33,6 +33,7 @@ import {
   type StatutCommande,
   type TacheHaccp,
 } from '@/lib/data'
+import { useAuth } from '@/lib/auth-contexte'
 
 /* ------------------------------------------------------------------ *
  * Le "poste de travail" local. Tout est écrit d'abord en local :
@@ -77,6 +78,10 @@ export type Echange = {
 }
 
 export type Etat = {
+  /** Restaurant à qui appartient cet état local — la sauvegarde d'un autre
+   *  compte ne doit jamais être servie ni réécrite ici (isolation entre
+   *  comptes sur un même navigateur). `null` tant que l'état est vierge. */
+  proprietaire: string | null
   commandes: Commande[]
   stock: Ingredient[]
   haccp: TacheHaccp[]
@@ -99,7 +104,14 @@ export type Etat = {
 }
 
 type Action =
-  | { type: 'ajouter'; platId: string }
+  | {
+      type: 'ajouter'
+      platId: string
+      /** Plat résolu par l'appelant (menu éditable) — évite la double
+       *  source de vérité : un plat créé au back-office, absent de `MENU`,
+       *  doit pouvoir entrer au ticket. */
+      plat?: { id: string; nom: string; prix: number }
+    }
   | { type: 'retirer'; platId: string }
   | { type: 'supprimer'; platId: string }
   | { type: 'viderPanier' }
@@ -128,17 +140,23 @@ type Action =
   | { type: 'crediterVisite'; id: string; montant: number }
   | { type: 'recompenser'; id: string; libelle: string; cout: number }
   | { type: 'synchroniser' }
-  | { type: 'hydrater'; etat: Etat }
-  | { type: 'reinitialiser' }
+  | { type: 'hydrater'; etat: Etat; proprietaire?: string }
+  | { type: 'reinitialiser'; proprietaire?: string }
 
 /**
  * La version fait partie de la clé : quand la forme des données change,
- * l'ancienne session est ignorée au lieu d'être mal relue.
+ * l'ancienne session est ignorée au lieu d'être mal relue. La clé est
+ * AUSSI scopée par restaurant : deux comptes sur le même navigateur ne
+ * partagent jamais leur poste de travail (isolation des données).
  */
-const CLE = 'alba:poste:v3'
+const CLE_BASE = 'alba:poste:v4'
+/** Ancienne clé partagée entre tous les comptes — purgée une seule fois. */
+const CLE_LEGACY = 'alba:poste:v3'
+const clePour = (restaurantId: string) => `${CLE_BASE}:${restaurantId}`
 
 function etatInitial(): Etat {
   return {
+    proprietaire: null,
     commandes: commandesInitiales(),
     stock: STOCK.map((i) => ({ ...i })),
     haccp: HACCP.map((t) => ({ ...t })),
@@ -235,13 +253,18 @@ export function estimerPreparation(lignes: LigneCommande[], enCours: number) {
 function reducer(etat: Etat, action: Action): Etat {
   switch (action.type) {
     case 'hydrater':
-      return action.etat
+      return {
+        ...etatInitial(),
+        ...action.etat,
+        proprietaire: action.proprietaire ?? null,
+      }
 
     case 'reinitialiser':
-      return etatInitial()
+      return { ...etatInitial(), proprietaire: action.proprietaire ?? null }
 
     case 'ajouter': {
-      const plat = MENU.find((p) => p.id === action.platId)
+      const plat =
+        action.plat ?? MENU.find((p) => p.id === action.platId)
       if (!plat) return etat
       const existante = etat.panier.find((l) => l.platId === plat.id)
       return {
@@ -704,6 +727,8 @@ type Contexte = {
 const AlbaContexte = createContext<Contexte | null>(null)
 
 export function AlbaProvider({ children }: { children: React.ReactNode }) {
+  const { utilisateur } = useAuth()
+  const restaurantId = utilisateur?.restaurantId ?? null
   const [etat, dispatch] = useReducer(reducer, null, etatInitial)
   const [notifs, setNotifs] = useState<Notif[]>([])
   const [pret, setPret] = useState(false)
@@ -741,30 +766,59 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
   )
 
   // Reprise de session : rien n'est perdu même si l'app s'est fermée
-  // brutalement (coupure de batterie).
+  // brutalement (coupure de batterie). La sauvegarde est SCOPÉE par
+  // restaurant : à l'arrivée (ou au changement de compte), on repart d'un
+  // état propre puis on restaure la sauvegarde du restaurant courant si
+  // elle existe — jamais celle d'un autre compte.
   useEffect(() => {
+    if (!restaurantId) return
+    let sauvegardeValide: Etat | null = null
     try {
-      const brut = window.localStorage.getItem(CLE)
+      const brut = window.localStorage.getItem(clePour(restaurantId))
       if (brut) {
         const sauvegarde = JSON.parse(brut) as Etat
-        if (sauvegarde?.commandes && sauvegarde?.stock) {
-          envoyer({ type: 'hydrater', etat: { ...etatInitial(), ...sauvegarde } })
+        if (
+          sauvegarde.proprietaire === restaurantId &&
+          sauvegarde.commandes &&
+          sauvegarde.stock
+        ) {
+          sauvegardeValide = sauvegarde
+        } else {
+          // Sauvegarde d'un autre restaurant, d'un ancien format ou
+          // illisible : elle ne doit jamais être servie au compte courant.
+          window.localStorage.removeItem(clePour(restaurantId))
         }
       }
+      // Ancienne clé partagée entre tous les comptes : purgée pour que
+      // plus aucune donnée ne traverse les comptes d'un même navigateur.
+      window.localStorage.removeItem(CLE_LEGACY)
     } catch {
       // sauvegarde illisible : on repart sur un état propre
     }
+    dispatch(
+      sauvegardeValide
+        ? {
+            type: 'hydrater',
+            etat: sauvegardeValide,
+            proprietaire: restaurantId,
+          }
+        : { type: 'reinitialiser', proprietaire: restaurantId },
+    )
     setPret(true)
-  }, [])
+  }, [restaurantId])
 
   useEffect(() => {
-    if (!pret) return
+    if (!pret || !restaurantId) return
+    // Garde double : on n'écrit sous la clé du restaurant courant que si
+    // l'état en mémoire lui appartient réellement (un état resté sur le
+    // compte précédent pendant la bascule n'est jamais persisté).
+    if (etat.proprietaire !== restaurantId) return
     try {
-      window.localStorage.setItem(CLE, JSON.stringify(etat))
+      window.localStorage.setItem(clePour(restaurantId), JSON.stringify(etat))
     } catch {
       // quota plein : l'app continue de fonctionner en mémoire
     }
-  }, [etat, pret])
+  }, [etat, pret, restaurantId])
 
   const notifier = useCallback((n: Omit<Notif, 'id'>) => {
     const id = Date.now() + Math.random()

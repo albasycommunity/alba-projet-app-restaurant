@@ -21,6 +21,7 @@ import {
   type Plat,
 } from '@/lib/data'
 import { nouveauId } from '@/lib/auth'
+import { useAuth } from '@/lib/auth-contexte'
 
 export type PlatEditable = Plat & {
   actif: boolean
@@ -30,9 +31,12 @@ export type PlatEditable = Plat & {
   cree: boolean
 }
 
-const CLE = 'alba:menu:v1'
+const CLE_BASE = 'alba:menu:v2'
+/** Ancienne clé partagée entre tous les comptes — purgée une seule fois. */
+const CLE_LEGACY = 'alba:menu:v1'
+const clePour = (restaurantId: string) => `${CLE_BASE}:${restaurantId}`
 
-type ContexteMenu = {
+type Contexte = {
   plats: PlatEditable[]
   platsActifs: PlatEditable[]
   ajouterPlat: (input: {
@@ -46,45 +50,76 @@ type ContexteMenu = {
   retirerPlat: (id: string) => void
 }
 
-const Contexte = createContext<ContexteMenu | null>(null)
+const Contexte = createContext<Contexte | null>(null)
 
 function initial(): PlatEditable[] {
   return MENU.map((p) => ({ ...p, actif: true, rupture: false, cree: false }))
 }
 
 export function MenuProvider({ children }: { children: React.ReactNode }) {
+  const { utilisateur } = useAuth()
+  const restaurantId = utilisateur?.restaurantId ?? null
   const [plats, setPlats] = useState<PlatEditable[]>([])
+  /** Restaurant à qui appartient le menu affiché — le menu d'un autre
+   *  compte n'est jamais persisté sous la clé du compte courant. */
+  const [proprietaire, setProprietaire] = useState<string | null>(null)
 
+  // Sauvegarde SCOPÉE par restaurant : à l'arrivée (ou au changement de
+  // compte), on repart du menu de démonstration puis on restaure le menu
+  // du restaurant courant s'il existe — jamais celui d'un autre compte.
   useEffect(() => {
+    if (!restaurantId) {
+      setProprietaire(null)
+      setPlats(initial())
+      return
+    }
+    let platsValides: PlatEditable[] | null = null
     try {
-      const brut = window.localStorage.getItem(CLE)
+      const brut = window.localStorage.getItem(clePour(restaurantId))
       if (brut) {
-        const relu = JSON.parse(brut) as PlatEditable[]
-        if (Array.isArray(relu) && relu.length > 0) {
+        const sauvegarde = JSON.parse(brut) as {
+          restaurantId: string
+          plats: PlatEditable[]
+        }
+        if (
+          sauvegarde.restaurantId === restaurantId &&
+          Array.isArray(sauvegarde.plats) &&
+          sauvegarde.plats.length > 0
+        ) {
           // Volume non récent : pas de champ `cree` — jamais considérer un
           // plat historique comme une création réelle du gérant (onboarding).
-          setPlats(
-            relu.map((p) => ({ ...p, cree: p.cree === true })),
-          )
-          return
+          platsValides = sauvegarde.plats.map((p) => ({
+            ...p,
+            cree: p.cree === true,
+          }))
+        } else {
+          window.localStorage.removeItem(clePour(restaurantId))
         }
       }
+      // Ancienne clé partagée entre tous les comptes : purgée pour que
+      // rien ne traverse les comptes d'un même navigateur.
+      window.localStorage.removeItem(CLE_LEGACY)
     } catch {
       // illisible : on repart sur le menu de démonstration
     }
-    setPlats(initial())
-  }, [])
+    setPlats(platsValides ?? initial())
+    setProprietaire(restaurantId)
+  }, [restaurantId])
 
   useEffect(() => {
     if (plats.length === 0) return
+    if (!restaurantId || proprietaire !== restaurantId) return
     try {
-      window.localStorage.setItem(CLE, JSON.stringify(plats))
+      window.localStorage.setItem(
+        clePour(restaurantId),
+        JSON.stringify({ restaurantId, plats }),
+      )
     } catch {
       // quota plein : l'app continue en mémoire
     }
-  }, [plats])
+  }, [plats, restaurantId, proprietaire])
 
-  const valeur = useMemo<ContexteMenu>(
+  const valeur = useMemo<Contexte>(
     () => ({
       plats,
       platsActifs: plats.filter((p) => p.actif),
