@@ -99,6 +99,13 @@ export type Etat = {
   prochainNumero: number
   /** tickets encaissés localement mais pas encore poussés au cloud */
   enAttente: string[]
+  /** tickets annulés (PIN) à retirer du cloud — l'annulation doit
+   *  s'y refléter, sinon l'annulation d'un poste compte quand même
+   *  dans le chiffre d'affaires des autres. */
+  suppressions: string[]
+  /** ids des tickets remontés du cloud, encaissés sur un AUTRE poste.
+      Sert à distinguer « sur ce poste » vs « tout le restaurant ». */
+  externes: string[]
   /** Liste des sorties de caisse du jour */
   decaissements: Decaissement[]
   /** CA de base déjà réalisé avant l'ouverture de la session */
@@ -145,6 +152,8 @@ type Action =
   | { type: 'crediterVisite'; id: string; montant: number }
   | { type: 'recompenser'; id: string; libelle: string; cout: number }
   | { type: 'commandeSynchronisee'; id: string }
+  | { type: 'commandeSupprimee'; id: string }
+  | { type: 'recevoirCommandesCloud'; commandes: Commande[] }
   | { type: 'hydrater'; etat: Etat; proprietaire?: string }
   | { type: 'reinitialiser'; proprietaire?: string }
 
@@ -181,6 +190,8 @@ function etatInitial(): Etat {
     destination: { canal: 'salle' },
     prochainNumero: 253,
     enAttente: [],
+    suppressions: [],
+    externes: [],
     decaissements: [],
     // Plus de socle de démonstration : les indicateurs comptent
     // uniquement les encaissements réels de la session.
@@ -356,7 +367,7 @@ function reducer(etat: Etat, action: Action): Etat {
       // alimente le suivi de performance individuel côté Équipe.
       const caissier = etat.equipe.find((e) => e.caisse && e.statut !== 'absent')
       const commande: Commande = {
-        id: `local-${Date.now()}`,
+        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         ref: action.ref,
         canal: etat.destination.canal,
         table: etat.destination.table,
@@ -435,6 +446,33 @@ function reducer(etat: Etat, action: Action): Etat {
       return {
         ...etat,
         commandes: etat.commandes.filter((c) => c.id !== action.id),
+        // L'annulation (PIN) doit aussi retirer le ticket du cloud, sinon
+        // les autres postes continueraient de le compter dans le CA.
+        suppressions: etat.suppressions.includes(action.id)
+          ? etat.suppressions
+          : [...etat.suppressions, action.id],
+        enAttente: etat.enAttente.filter((id) => id !== action.id),
+        externes: etat.externes.filter((id) => id !== action.id),
+      }
+
+    case 'recevoirCommandesCloud': {
+      // Fusion par id : on ignore ce qu'on connaît déjà (nos propres
+      // tickets), on ajoute les tickets encaissés sur les autres postes.
+      const dejaConnu = new Set(etat.commandes.map((c) => c.id))
+      const nouveaux = action.commandes.filter((c) => !dejaConnu.has(c.id))
+      if (nouveaux.length === 0) return etat
+      const ids = nouveaux.map((c) => c.id)
+      return {
+        ...etat,
+        commandes: [...nouveaux.map((c) => ({ ...c, synchronise: true })), ...etat.commandes],
+        externes: [...etat.externes.filter((id) => !ids.includes(id)), ...ids],
+      }
+    }
+
+    case 'commandeSupprimee':
+      return {
+        ...etat,
+        suppressions: etat.suppressions.filter((id) => id !== action.id),
       }
 
     case 'ajouterDecaissement': {
@@ -734,6 +772,8 @@ export type Notif = {
 export type Indicateurs = {
   caJour: number
   tickets: number
+  /** tickets encaissés sur CE poste (hors remontée des autres postes). */
+  ticketsPoste: number
   panierMoyen: number
   partObjectif: number
   parMode: { mode: ModePaiement; montant: number; part: number }[]
@@ -939,16 +979,40 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
   )
 
   // Boucle de persistance offline-first robuste
-  // Tente continuellement d'envoyer les tickets en attente.
+  // Tente continuellement d'envoyer les tickets en attente (POST) et de
+  // faire remonter les annulations (DELETE) : le cloud finit par
+  // ressembler à l'état réel des caisses, même hors ligne.
   useEffect(() => {
-    if (!pret || etat.enAttente.length === 0) return
+    if (!pret) return
+    const aEnvoyer = etat.enAttente.length > 0
+    const aSupprimer = etat.suppressions.length > 0
+    if (!aEnvoyer && !aSupprimer) return
 
     let timeout: number
     let isCancelled = false
 
     const syncPending = async () => {
       const pendingIds = [...etat.enAttente]
+      const pendingDeletes = [...etat.suppressions]
       let successCount = 0
+
+      for (const id of pendingDeletes) {
+        if (isCancelled) break
+        try {
+          const res = await fetch(`/api/caisse/commandes?id=${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+          })
+          if (res.ok) {
+            envoyer({ type: 'commandeSupprimee', id })
+          } else {
+            // Erreur serveur (500, etc) : on n'efface pas, on réessaiera
+            break
+          }
+        } catch {
+          // Hors ligne ou timeout : on arrête pour ce cycle
+          break
+        }
+      }
 
       for (const id of pendingIds) {
         if (isCancelled) break
@@ -981,9 +1045,13 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
           detail: 'Sauvegardé sur le cloud sans perte.',
         })
       }
-      
-      // S'il en reste et pas annulé, on réessaye dans 10 secondes
-      if (!isCancelled && etat.enAttente.length > successCount) {
+
+      // S'il en reste et pas annulé, on réessaie dans 10 secondes
+      if (
+        !isCancelled &&
+        (etat.enAttente.length > successCount + pendingDeletes.length ||
+          etat.suppressions.length > 0)
+      ) {
         timeout = window.setTimeout(syncPending, 10000)
       }
     }
@@ -1002,7 +1070,50 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(timeout)
       window.removeEventListener('online', online)
     }
-  }, [etat.enAttente, etat.commandes, envoyer, notifier, pret])
+  }, [etat.enAttente, etat.suppressions, etat.commandes, envoyer, notifier, pret])
+
+  // Tirage multiposte : les encaissements faits sur les AUTRES postes du
+  // restaurant sont relus régulièrement et fusionnés dans l'état local.
+  // Le pilotage compte ainsi tout le restaurant, pas seulement ce poste.
+  useEffect(() => {
+    if (!pret || !restaurantId) return
+
+    let actif = true
+    // Cache des ids déjà présents, pour ne rien reparcourir inutilement.
+    const tirer = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return
+      try {
+        const res = await fetch('/api/caisse/commandes')
+        if (!res.ok) return
+        const donnees = await res.json()
+        if (actif && Array.isArray(donnees?.commandes)) {
+          dispatch({
+            type: 'recevoirCommandesCloud',
+            commandes: donnees.commandes as Commande[],
+          })
+        }
+      } catch {
+        // Hors ligne ou erreur : le cycle suivant réessaiera
+      }
+    }
+
+    tirer()
+    const interval = window.setInterval(tirer, 30_000)
+    const surVisibilite = () => {
+      if (document.visibilityState === 'visible') tirer()
+    }
+    window.addEventListener('focus', tirer)
+    window.addEventListener('online', tirer)
+    document.addEventListener('visibilitychange', surVisibilite)
+
+    return () => {
+      actif = false
+      window.clearInterval(interval)
+      window.removeEventListener('focus', tirer)
+      window.removeEventListener('online', tirer)
+      document.removeEventListener('visibilitychange', surVisibilite)
+    }
+  }, [pret, restaurantId])
 
   const total = useMemo(
     () => etat.panier.reduce((s, l) => s + l.prix * l.qte, 0),
@@ -1015,10 +1126,14 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       (s, c) => s + c.reglements.reduce((t, r) => t + r.montant, 0),
       0,
     )
-    // CA et tickets : uniquement les encaissements réels de la session.
-    // Le « socle » de démonstration (caBase/ticketsBase) n'est plus compté.
+    // CA et tickets : uniquement les encaissements réels de la session,
+    // tous postes confondus (les `local-` remontés du cloud sont inclus).
     const caJour = caLocal
     const tickets = locales.length
+    // Encaissements faits sur CE poste (le cloud n'apporte que le reste).
+    const ticketsPoste = locales.filter(
+      (c) => !etat.externes.includes(c.id),
+    ).length
 
     // Répartition par mode : calculée uniquement depuis les règlements
     // réellement enregistrés sur les tickets de la session.
@@ -1181,6 +1296,7 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
     return {
       caJour,
       tickets,
+      ticketsPoste,
       panierMoyen: Math.round(caJour / Math.max(1, tickets)),
       partObjectif: Math.min(100, Math.round((caJour / OBJECTIF_JOUR) * 100)),
       parMode,
@@ -1200,7 +1316,7 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       ),
       haccpRestant: etat.haccp.filter((t) => !t.faite).length,
       equipePresente: etat.equipe.filter((e) => e.statut === 'present').length,
-      enCuisine: etat.commandes.filter(
+      enCuisine: locales.filter(
         (c) => c.statut === 'recue' || c.statut === 'preparation',
       ).length,
       totalDecaissements,

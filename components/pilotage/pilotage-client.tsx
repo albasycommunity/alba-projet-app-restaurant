@@ -150,7 +150,7 @@ export function PilotageClient() {
   }
 
   const restePourObjectif = Math.max(0, OBJECTIF_JOUR - indicateurs.caJour)
-  const ticketsLocaux = etat.commandes.filter((c) => c.id.startsWith('local-')).length
+  const ticketsLocaux = indicateurs.ticketsPoste
 
   // Aucun encaissement réel encore : on ne montre pas de zéros trompeurs,
   // on invite à la première vente.
