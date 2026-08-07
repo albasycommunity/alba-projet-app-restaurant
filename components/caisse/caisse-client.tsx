@@ -9,7 +9,10 @@ import { Card, CardTitle, EmptyState, PageHeader, Sheet } from '@/components/kit
 import { GrillePlats } from '@/components/caisse/grille-plats'
 import { Ticket } from '@/components/caisse/ticket'
 import { Paiement } from '@/components/caisse/paiement'
+import { HistoriqueCaisseSheet } from '@/components/caisse/historique-caisse'
+import { DecaissementSheet } from '@/components/caisse/decaissement-caisse'
 import { cn } from '@/lib/utils'
+import { ListIcon, BanknoteIcon } from 'lucide-react'
 
 /**
  * Caisse. Sur mobile le ticket vit dans un tiroir appelé par la barre
@@ -20,6 +23,8 @@ export function CaisseClient() {
   const { etat, envoyer, total } = useAlba()
   const [ticketOuvert, setTicketOuvert] = useState(false)
   const [paiementOuvert, setPaiementOuvert] = useState(false)
+  const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
+  const [decaissementOuvert, setDecaissementOuvert] = useState(false)
 
   const caissier = etat.equipe.find((e) => e.caisse && e.statut !== 'absent')
   const articles = etat.panier.reduce((n, l) => n + l.qte, 0)
@@ -57,6 +62,26 @@ export function CaisseClient() {
         <PageHeader
           titre="Caisse"
           sous="Appuie sur un plat, choisis le moyen de paiement, c’est fini."
+          action={
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHistoriqueOuvert(true)}
+                className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground transition-transform hover:scale-[1.03]"
+              >
+                <ListIcon className="size-4" />
+                <span className="hidden sm:inline">Historique</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDecaissementOuvert(true)}
+                className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground transition-transform hover:scale-[1.03]"
+              >
+                <BanknoteIcon className="size-4" />
+                <span className="hidden sm:inline">Décaissement</span>
+              </button>
+            </div>
+          }
         />
 
         <div className="grid items-start gap-6 lg:grid-cols-[1fr_360px]">
@@ -169,6 +194,16 @@ export function CaisseClient() {
       <Paiement
         ouvert={paiementOuvert}
         onFermer={() => setPaiementOuvert(false)}
+      />
+
+      <HistoriqueCaisseSheet
+        ouvert={historiqueOuvert}
+        onFermer={() => setHistoriqueOuvert(false)}
+      />
+
+      <DecaissementSheet
+        ouvert={decaissementOuvert}
+        onFermer={() => setDecaissementOuvert(false)}
       />
     </>
   )

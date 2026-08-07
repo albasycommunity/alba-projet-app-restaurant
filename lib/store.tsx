@@ -33,6 +33,7 @@ import {
   type Reglement,
   type StatutCommande,
   type TacheHaccp,
+  type Decaissement,
 } from '@/lib/data'
 import { useAuth } from '@/lib/auth-contexte'
 
@@ -99,6 +100,8 @@ export type Etat = {
   prochainNumero: number
   /** tickets encaissés localement mais pas encore poussés au cloud */
   enAttente: string[]
+  /** Liste des sorties de caisse du jour */
+  decaissements: Decaissement[]
   /** CA de base déjà réalisé avant l'ouverture de la session */
   caBase: number
   ticketsBase: number
@@ -121,6 +124,7 @@ type Action =
   | { type: 'avancer'; id: string }
   | { type: 'reculer'; id: string }
   | { type: 'annulerCommande'; id: string }
+  | { type: 'ajouterDecaissement'; montant: number; motif: string; parId?: string }
   | { type: 'recevoirCommandeExterne'; commande: Commande }
   | { type: 'haccpBascule'; id: string; par: string }
   | {
@@ -178,6 +182,7 @@ function etatInitial(): Etat {
     destination: { canal: 'salle' },
     prochainNumero: 253,
     enAttente: [],
+    decaissements: [],
     caBase: 932000,
     ticketsBase: 148,
   }
@@ -430,6 +435,23 @@ function reducer(etat: Etat, action: Action): Etat {
         ...etat,
         commandes: etat.commandes.filter((c) => c.id !== action.id),
       }
+
+    case 'ajouterDecaissement': {
+      const dec: Decaissement = {
+        id: `dec-${Date.now()}`,
+        montant: action.montant,
+        motif: action.motif,
+        date: Date.now(),
+        parId: action.parId,
+        synchronise: false,
+      }
+      return {
+        ...etat,
+        decaissements: [...etat.decaissements, dec],
+        // Note: pour un vrai système complet, les décaissements devraient
+        // aussi être synchronisés via `enAttente`. Pour l'instant, on les garde en local.
+      }
+    }
 
     case 'haccpBascule':
       return {
@@ -1003,6 +1025,13 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
     for (const c of locales) {
       for (const r of c.reglements) socle[r.mode] += r.montant
     }
+    
+    // Total des décaissements
+    const totalDecaissements = etat.decaissements.reduce((s, d) => s + d.montant, 0)
+    
+    // On déduit les décaissements des espèces pour le fond de caisse net
+    socle['Espèces'] = Math.max(0, socle['Espèces'] - totalDecaissements)
+
     const totalModes = Object.values(socle).reduce((s, v) => s + v, 0) || 1
     const parMode = (Object.keys(socle) as ModePaiement[])
       .map((mode) => ({
@@ -1154,6 +1183,7 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       enCuisine: etat.commandes.filter(
         (c) => c.statut === 'recue' || c.statut === 'preparation',
       ).length,
+      totalDecaissements,
       performance,
       coutRH,
       ratioRH,
