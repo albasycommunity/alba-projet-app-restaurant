@@ -4,8 +4,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { PrinterIcon, ShareIcon, SparklesIcon, DownloadIcon } from 'lucide-react'
 import { OBJECTIF_JOUR, RESTAURANT, fcfa, type Reglement } from '@/lib/data'
 import { useAlba } from '@/lib/store'
-import { PDFDownloadLink } from '@react-pdf/renderer'
-import { PdfFacture } from './pdf-facture'
+import { TicketThermique } from './ticket-thermique'
 
 /**
  * Confirmation d'encaissement : le billet se dépose dans la jauge de caisse,
@@ -60,8 +59,21 @@ export function Recu({
     )
   }
 
+  const imprimerTicket = () => {
+    window.print()
+  }
+
   return (
     <div className="flex flex-col items-center gap-5">
+      {/* Zone cachée à l'écran, visible uniquement pour l'impression thermique */}
+      <div className="hidden print:block print:absolute print:inset-0 print:bg-white print:z-50">
+        <TicketThermique
+          ref_={ref_}
+          reglements={reglements}
+          total={total}
+          lignes={lignes}
+        />
+      </div>
       {/* Jauge de caisse : le billet tombe dedans */}
       <div className="relative flex h-36 w-full max-w-56 items-end justify-center">
         {objectifAtteint && (
@@ -146,9 +158,18 @@ export function Recu({
         </ul>
         <div className="flex items-baseline justify-between gap-3 border-t border-dashed border-border pt-2.5">
           <span className="text-sm font-medium">Total</span>
-          <span className="font-display text-lg font-semibold tnum">
-            {fcfa(total)}
-          </span>
+          <div className="flex flex-col items-center gap-2">
+            <button
+              onClick={imprimerTicket}
+              className="flex size-14 items-center justify-center rounded-full bg-secondary text-foreground transition-transform duration-300 hover:scale-105 active:scale-95"
+              aria-label="Imprimer le ticket"
+            >
+              <PrinterIcon className="size-6" />
+            </button>
+            <span className="text-xs font-medium text-muted-foreground">
+              Imprimer
+            </span>
+          </div>
         </div>
       </div>
 
@@ -161,29 +182,7 @@ export function Recu({
           <ShareIcon className="size-4" />
           Envoyer le reçu sur WhatsApp
         </button>
-        {isClient && (
-          <PDFDownloadLink
-            document={
-              <PdfFacture
-                refFacture={ref_}
-                dateFacture={new Date().toISOString()}
-                reglements={reglements}
-                total={total}
-                lignes={lignes}
-              />
-            }
-            fileName={`Facture_${ref_}.pdf`}
-            className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3.5 text-sm font-medium transition-colors hover:bg-secondary/60"
-          >
-            {/* @ts-ignore : react-pdf inner render prop typings can be weird */}
-            {({ loading }) => (
-              <>
-                {loading ? <DownloadIcon className="size-4 animate-pulse" /> : <PrinterIcon className="size-4" />}
-                {loading ? 'Génération PDF...' : 'Télécharger la Facture PDF'}
-              </>
-            )}
-          </PDFDownloadLink>
-        )}
+
         <button
           type="button"
           onClick={onTerminer}
