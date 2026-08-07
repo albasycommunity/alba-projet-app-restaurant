@@ -108,6 +108,8 @@ export type Etat = {
   externes: string[]
   /** Liste des sorties de caisse du jour */
   decaissements: Decaissement[]
+  /** décaissements locaux pas encore poussés au cloud */
+  decaissementsEnAttente: string[]
   /** CA de base déjà réalisé avant l'ouverture de la session */
   caBase: number
   ticketsBase: number
@@ -131,6 +133,8 @@ type Action =
   | { type: 'reculer'; id: string }
   | { type: 'annulerCommande'; id: string }
   | { type: 'ajouterDecaissement'; montant: number; motif: string; parId?: string }
+  | { type: 'decaissementSynchronise'; id: string }
+  | { type: 'recevoirDecaissementsCloud'; decaissements: Decaissement[] }
   | { type: 'recevoirCommandeExterne'; commande: Commande }
   | { type: 'haccpBascule'; id: string; par: string }
   | {
@@ -193,6 +197,7 @@ function etatInitial(): Etat {
     suppressions: [],
     externes: [],
     decaissements: [],
+    decaissementsEnAttente: [],
     // Plus de socle de démonstration : les indicateurs comptent
     // uniquement les encaissements réels de la session.
     caBase: 0,
@@ -477,7 +482,7 @@ function reducer(etat: Etat, action: Action): Etat {
 
     case 'ajouterDecaissement': {
       const dec: Decaissement = {
-        id: `dec-${Date.now()}`,
+        id: `dec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         montant: action.montant,
         motif: action.motif,
         date: Date.now(),
@@ -487,8 +492,31 @@ function reducer(etat: Etat, action: Action): Etat {
       return {
         ...etat,
         decaissements: [...etat.decaissements, dec],
-        // Note: pour un vrai système complet, les décaissements devraient
-        // aussi être synchronisés via `enAttente`. Pour l'instant, on les garde en local.
+        decaissementsEnAttente: [...etat.decaissementsEnAttente, dec.id],
+      }
+    }
+
+    case 'decaissementSynchronise':
+      return {
+        ...etat,
+        decaissementsEnAttente: etat.decaissementsEnAttente.filter(
+          (id) => id !== action.id,
+        ),
+        decaissements: etat.decaissements.map((d) =>
+          d.id === action.id ? { ...d, synchronise: true } : d,
+        ),
+      }
+
+    case 'recevoirDecaissementsCloud': {
+      const dejaConnu = new Set(etat.decaissements.map((d) => d.id))
+      const nouveaux = action.decaissements.filter((d) => !dejaConnu.has(d.id))
+      if (nouveaux.length === 0) return etat
+      return {
+        ...etat,
+        decaissements: [
+          ...nouveaux.map((d) => ({ ...d, synchronise: true })),
+          ...etat.decaissements,
+        ],
       }
     }
 
@@ -994,6 +1022,7 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
     const syncPending = async () => {
       const pendingIds = [...etat.enAttente]
       const pendingDeletes = [...etat.suppressions]
+      const pendingDec = [...etat.decaissementsEnAttente]
       let successCount = 0
 
       for (const id of pendingDeletes) {
@@ -1010,6 +1039,29 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {
           // Hors ligne ou timeout : on arrête pour ce cycle
+          break
+        }
+      }
+
+      // Décaissements d'abord : ils sont rares et courts, l'accusé est
+      // rapide à obtenir.
+      for (const id of pendingDec) {
+        if (isCancelled) break
+        const dec = etat.decaissements.find((d) => d.id === id)
+        if (!dec) continue
+        try {
+          const res = await fetch('/api/caisse/decaissements', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dec),
+          })
+          if (res.ok) {
+            envoyer({ type: 'decaissementSynchronise', id })
+            successCount++
+          } else {
+            break
+          }
+        } catch {
           break
         }
       }
@@ -1047,11 +1099,11 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       }
 
       // S'il en reste et pas annulé, on réessaie dans 10 secondes
-      if (
-        !isCancelled &&
-        (etat.enAttente.length > successCount + pendingDeletes.length ||
-          etat.suppressions.length > 0)
-      ) {
+      const resteEnAttente =
+        etat.enAttente.length > successCount ||
+        etat.suppressions.length > 0 ||
+        etat.decaissementsEnAttente.length > 0
+      if (!isCancelled && resteEnAttente) {
         timeout = window.setTimeout(syncPending, 10000)
       }
     }
@@ -1070,7 +1122,7 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(timeout)
       window.removeEventListener('online', online)
     }
-  }, [etat.enAttente, etat.suppressions, etat.commandes, envoyer, notifier, pret])
+  }, [etat.enAttente, etat.suppressions, etat.decaissementsEnAttente, etat.commandes, etat.decaissements, envoyer, notifier, pret])
 
   // Tirage multiposte : les encaissements faits sur les AUTRES postes du
   // restaurant sont relus régulièrement et fusionnés dans l'état local.
@@ -1083,14 +1135,27 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
     const tirer = async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return
       try {
-        const res = await fetch('/api/caisse/commandes')
-        if (!res.ok) return
-        const donnees = await res.json()
-        if (actif && Array.isArray(donnees?.commandes)) {
-          dispatch({
-            type: 'recevoirCommandesCloud',
-            commandes: donnees.commandes as Commande[],
-          })
+        const [cmdRes, decRes] = await Promise.all([
+          fetch('/api/caisse/commandes'),
+          fetch('/api/caisse/decaissements'),
+        ])
+        if (cmdRes.ok) {
+          const donnees = await cmdRes.json()
+          if (actif && Array.isArray(donnees?.commandes)) {
+            dispatch({
+              type: 'recevoirCommandesCloud',
+              commandes: donnees.commandes as Commande[],
+            })
+          }
+        }
+        if (decRes.ok) {
+          const donnees = await decRes.json()
+          if (actif && Array.isArray(donnees?.decaissements)) {
+            dispatch({
+              type: 'recevoirDecaissementsCloud',
+              decaissements: donnees.decaissements as Decaissement[],
+            })
+          }
         }
       } catch {
         // Hors ligne ou erreur : le cycle suivant réessaiera
