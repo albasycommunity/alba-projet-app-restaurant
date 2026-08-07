@@ -84,6 +84,25 @@ app/api/                          → routes protégées (rôle + abonnement + p
 3. Le super admin confirme la réception dans `/super-admin` → statut `actif`, nouvelle échéance.
 4. Bannière d'alerte dans le back-office quand l'échéance approche (< 7 jours).
 
+### Contrôle du coulage / anti-vol (caisse)
+
+Deux garde-fous dans `/caisse`, en plus de l'encaissement :
+
+- **Décaissement** : sortie d'espèces tracée (montant + motif obligatoire, auteur
+  enregistré). Le total est soustrait **uniquement** du fond de caisse Espèces
+  (`component.caisse.decaissement-caisse.tsx` → `lib/store.tsx` action
+  `ajouterDecaissement`). Les décaissements restent en local pour l'instant
+  (pas encore poussés au cloud, volontairement).
+- **Historique + annulation par PIN** : `HistoriqueCaisseSheet` liste les
+  tickets encaissés (heure + total). Annuler un ticket ouvre un dialogue qui
+  exige le **PIN manager** (`PIN_MANAGER`, `1234` par défaut dans
+  `lib/data.ts`) avant de retirer la commande de la caisse (action
+  `annulerCommande`).
+
+> **Sécurité** : le PIN est en dur dans `lib/data.ts` pour ce prototype. En
+> production, le déplacer du côté serveur (vérifié via API, jamais exposé au
+> client) et permettre son changement par l'admin.
+
 ## Commandes utiles
 
 ```bash
