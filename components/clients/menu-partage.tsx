@@ -11,31 +11,42 @@ import {
 } from 'lucide-react'
 import {
   CATEGORIES,
-  MENU,
   RESTAURANT,
   fcfa,
   type Categorie,
 } from '@/lib/data'
+import { useMenu } from '@/components/menu-store'
 import { Badge, Card, CardTitle } from '@/components/kit'
 import { cn } from '@/lib/utils'
 
-const LIEN_MENU = `https://menu.alba.sn/${RESTAURANT.nom
-  .toLowerCase()
-  .replace(/\s+/g, '-')}`
+/**
+ * Lien public vers le menu client, construit sur l'ORIGINE RÉELLE de
+ * l'app (jamais un domaine codé en dur) : le QR et le texte partagé
+ * pointent vers le chemin public du menu, qui reflète la carte éditable.
+ */
+function lienMenu() {
+  const origine =
+    typeof window !== 'undefined' ? window.location.origin : ''
+  return `${origine}/?carte=partage`
+}
 
 /**
  * Menu digital partageable. Le restaurateur choisit ce qu'il met en avant,
  * puis envoie le tout sur WhatsApp — le canal réellement utilisé ici —
- * ou affiche le QR en salle pour la commande à emporter.
+ * ou affiche le QR en salle pour la commande à emporter. La carte est le
+ * MENU ÉDITABLE du back-office (plats actifs), jamais une copie en dur.
  */
 export function MenuPartage() {
+  const { platsActifs } = useMenu()
   const [retenues, setRetenues] = useState<Categorie[]>([...CATEGORIES])
   const [copie, setCopie] = useState(false)
   const [qr, setQr] = useState<string | null>(null)
 
+  const LIEN_MENU = lienMenu()
+
   const plats = useMemo(
-    () => MENU.filter((p) => retenues.includes(p.categorie)),
-    [retenues],
+    () => platsActifs.filter((p) => retenues.includes(p.categorie)),
+    [retenues, platsActifs],
   )
 
   const texte = useMemo(() => {

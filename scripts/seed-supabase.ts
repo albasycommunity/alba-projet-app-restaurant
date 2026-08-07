@@ -76,10 +76,10 @@ const abonnements = [
 ]
 
 const paiements = [
-  { id: 'p1', abonnement_id: 'a1', restaurant_id: 'r1', restaurant_nom: 'Chez Fatou', montant: 25_000, mode: 'Wave', motif: 'Abonnement mensuel', date: ilYAJours(20) },
-  { id: 'p2', abonnement_id: 'a3', restaurant_id: 'r3', restaurant_nom: 'Teranga Grill', montant: 250_000, mode: 'Orange Money', motif: 'Abonnement annuel', date: ilYAJours(30) },
-  { id: 'p3', abonnement_id: 'a1', restaurant_id: 'r1', restaurant_nom: 'Chez Fatou', montant: 25_000, mode: 'Wave', motif: 'Abonnement mensuel', date: ilYAJours(50) },
-  { id: 'p4', abonnement_id: 'a2', restaurant_id: 'r2', restaurant_nom: 'Le Baobab Bleu', montant: 25_000, mode: 'Free Money', motif: 'Abonnement mensuel', date: ilYAJours(55) },
+  { id: 'p1', abonnement_id: 'a1', restaurant_id: 'r1', restaurant_nom: 'Chez Fatou', montant: 35_000, mode: 'Wave', motif: 'Abonnement mensuel', date: ilYAJours(20) },
+  { id: 'p2', abonnement_id: 'a3', restaurant_id: 'r3', restaurant_nom: 'Teranga Grill', montant: 150_000, mode: 'Orange Money', motif: 'Abonnement annuel', date: ilYAJours(30) },
+  { id: 'p3', abonnement_id: 'a1', restaurant_id: 'r1', restaurant_nom: 'Chez Fatou', montant: 35_000, mode: 'Wave', motif: 'Abonnement mensuel', date: ilYAJours(50) },
+  { id: 'p4', abonnement_id: 'a2', restaurant_id: 'r2', restaurant_nom: 'Le Baobab Bleu', montant: 15_000, mode: 'Free Money', motif: 'Abonnement mensuel', date: ilYAJours(55) },
 ]
 
 async function viderDonneesDemo() {

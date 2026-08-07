@@ -124,7 +124,15 @@ export function Ticket({ compact = false }: { compact?: boolean }) {
                 <button
                   type="button"
                   onClick={() => {
-                    envoyer({ type: 'ajouter', platId: ligne.platId })
+                    envoyer({
+                      type: 'ajouter',
+                      platId: ligne.platId,
+                      plat: {
+                        id: ligne.platId,
+                        nom: ligne.nom,
+                        prix: ligne.prix,
+                      },
+                    })
                     vibrer(8)
                   }}
                   aria-label={`Ajouter un ${ligne.nom}`}

@@ -18,13 +18,16 @@ const LIMITE_ACTIONS = { fenetreMs: 3_600_000, max: 60 }
 
 /**
  * Consomme une action de découverte réelle (encaissement, création
- * d'employé). Le restaurantId vient TOUJOURS de la session, jamais du
- * corps de requête. Quota épuisé ou abonnement plus en découverte → 402.
+ * d'employé). Accessible à l'admin ET au personnel de caisse : le
+ * restaurantId vient TOUJOURS de la session, jamais du corps de requête.
+ * Quota épuisé ou abonnement plus en découverte → 402.
  */
 export async function POST(req: NextRequest) {
-  const garde = await exigerRole(req, [Role.RESTAURANT_ADMIN], {
-    verifierAbonnement: true,
-  })
+  const garde = await exigerRole(
+    req,
+    [Role.RESTAURANT_ADMIN, Role.STAFF],
+    { verifierAbonnement: true },
+  )
   if (!garde.ok) return garde.reponse
 
   if (!(await requeteAutorisee(req, 'actions', LIMITE_ACTIONS))) {
@@ -52,7 +55,12 @@ export async function POST(req: NextRequest) {
   }
 
   const restantes = await decouverteActionsRestantes(restaurantId)
-  if (restantes === null || restantes === 0) {
+  // Abonnement payant actif : pas de quota de découverte à consommer —
+  // la route répond OK sans rien décrémenter (jamais de 402 fantôme).
+  if (restantes === null) {
+    return NextResponse.json({ ok: true, actionsRestantes: null })
+  }
+  if (restantes === 0) {
     return reponseQuotaDecouverteEpuise()
   }
 

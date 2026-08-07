@@ -6,6 +6,7 @@ import {
   BanknoteIcon,
   DeleteIcon,
   QrCodeIcon,
+  SparklesIcon,
   TrashIcon,
   WifiOffIcon,
 } from 'lucide-react'
@@ -82,14 +83,14 @@ export function Paiement({
 
   const valider = async () => {
     if (!complet) return
-    // En découverte, chaque encaissement est une action réelle : la
-    // consommation est non bloquante pour le rendu. Quota épuisé → 402,
-    // on redirige vers l'activation SANS enregistrer le ticket. Erreur
-    // réseau → fail-open : le ticket passe quand même (jamais perdu).
-    if (
-      abonnement?.statut === 'decouverte' &&
-      (abonnement.decouverteActionsRestantes ?? 0) > 0
-    ) {
+    // Hard paywall : en découverte, CHAQUE encaissement passe par l'API
+    // qui vérifie et consomme le quota de façon atomique — la réponse
+    // 402 est le seul juge (ticket NON enregistré, redirection vers
+    // l'activation). Quota à 0 : la garde conditionne toujours l'appel,
+    // le blocage vient du serveur, jamais d'un compteur client.
+    // Uniquement hors ligne ou en erreur serveur imprévue le ticket
+    // passe quand même (jamais perdu) ; la consommation sera réconciliée.
+    if (abonnement?.statut === 'decouverte') {
       try {
         const reponse = await fetch('/api/back-office/actions', {
           method: 'POST',
@@ -100,9 +101,21 @@ export function Paiement({
           router.push('/abonnement/renouveler?raison=activation-requise')
           return
         }
-        actualiser()
+        if (!reponse.ok) {
+          notifier({
+            ton: 'info',
+            titre: 'Quota pas vérifiable',
+            detail: 'Le serveur n\'a pas pu valider ce ticket. Réessaie.',
+          })
+          return
+        }
+        await actualiser()
       } catch {
-        // Réseau indisponible : on laisse passer l'encaissement.
+        notifier({
+          ton: 'info',
+          titre: 'Hors ligne — ticket gardé',
+          detail: 'Le quota sera vérifié au retour du réseau.',
+        })
       }
     }
     const ref = `#${etat.prochainNumero}`
@@ -167,6 +180,32 @@ export function Paiement({
       }
     >
       <div className="flex flex-col gap-4">
+        {/* Quota de découverte : le gérant sait où il en est avant de
+            valider — la dernière action est signalée sans équivoque. */}
+        {abonnement?.statut === 'decouverte' && (
+          <div
+            className={cn(
+              'flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs',
+              (abonnement.decouverteActionsRestantes ?? 0) <= 1
+                ? 'border-warning/40 bg-warning/10 text-warning'
+                : 'border-primary/30 bg-primary/8 text-primary',
+            )}
+          >
+            <SparklesIcon className="size-4 shrink-0" />
+            <span>
+              Mode découverte —{' '}
+              <strong className="font-semibold tnum">
+                {abonnement.decouverteActionsRestantes ?? 0} action
+                {(abonnement.decouverteActionsRestantes ?? 0) > 1 ? 's' : ''}
+              </strong>{' '}
+              réelle{(abonnement.decouverteActionsRestantes ?? 0) > 1 ? 's' : ''} restante
+              {(abonnement.decouverteActionsRestantes ?? 0) > 1 ? 's' : ''}
+              {(abonnement.decouverteActionsRestantes ?? 0) <= 1 &&
+                ' — après celle-ci, active ton abonnement.'}
+            </span>
+          </div>
+        )}
+
         {/* Ce qu'il reste à payer, impossible à manquer */}
         <div className="flex items-end justify-between gap-3 rounded-xl border border-border bg-secondary/40 p-4">
           <div className="flex flex-col gap-0.5">

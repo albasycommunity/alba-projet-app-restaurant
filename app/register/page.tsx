@@ -12,6 +12,7 @@ import {
   StoreIcon,
 } from 'lucide-react'
 import { LogoMark } from '@/components/landing/logo'
+import { PLANS_ABONNEMENT, type PalierAbonnement, type PlanAbonnement } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
 const CHAMP =
@@ -19,12 +20,34 @@ const CHAMP =
 
 type Mode = 'restaurant' | 'client'
 
+/** Le plan choisi sur la grille de tarifs est mémorisé : la page
+ *  « Activer mon restaurant » le pré-sélectionnera plus tard. */
+const CLE_INTENTION = 'alba:plan-intention'
+
+function enregistrerIntention(palier: string | null, plan: string | null) {
+  if (palier && (plan === 'mensuel' || plan === 'annuel')) {
+    try {
+      window.localStorage.setItem(
+        CLE_INTENTION,
+        JSON.stringify({ palier, plan }),
+      )
+    } catch {
+      // quota local plein : on continue sans pré-sélection
+    }
+  }
+}
+
 function PageInscription() {
   const router = useRouter()
   const params = useSearchParams()
   const suivant = params.get('suivant')
+  // Un CTA venu de la grille de plans amène le mode restaurant
+  // (pré-sélectionné) avec le palier et la périodicité choisis.
+  const palierCible = params.get('palier')
+  const planCible = params.get('plan')
+  const vientDesPlans = params.get('mode') === 'restaurant' || !!palierCible
 
-  const [mode, setMode] = useState<Mode>('client')
+  const [mode, setMode] = useState<Mode>(vientDesPlans ? 'restaurant' : 'client')
   const [nom, setNom] = useState('')
   const [email, setEmail] = useState('')
   const [motDePasse, setMotDePasse] = useState('')
@@ -42,6 +65,12 @@ function PageInscription() {
     e.preventDefault()
     setErreur(null)
     setChargement(true)
+    // Le choix de plan fait sur la grille des tarifs est conservé en local
+    // pour la page « Activer mon restaurant » (pré-sélection plus tard).
+    enregistrerIntention(
+      palierCible && palierCible in PLANS_ABONNEMENT ? palierCible : null,
+      planCible,
+    )
     try {
       const reponse = await fetch('/api/auth/register', {
         method: 'POST',
@@ -131,7 +160,11 @@ function PageInscription() {
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {mode === 'restaurant'
-                ? 'Crée ton restaurant en 2 minutes. Explore tout, paie seulement quand tu l’actives.'
+                ? palierCible && palierCible in PLANS_ABONNEMENT
+                  ? `Crée ton restaurant en 2 minutes. Le plan ${
+                      PLANS_ABONNEMENT[palierCible as PalierAbonnement].libelle
+                    } ${planCible === 'annuel' ? 'annuel' : 'mensuel'} est pré-sélectionné — tu l’actives quand tu es prêt.`
+                  : 'Crée ton restaurant en 2 minutes. Explore tout, paie seulement quand tu l’actives.'
                 : "30 secondes, gratuit. La Carte de Fidélité s'active avec ton compte."}
             </p>
           </div>

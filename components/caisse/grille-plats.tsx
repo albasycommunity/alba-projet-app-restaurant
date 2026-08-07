@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from 'react'
 import { PlusIcon, SearchIcon, TriangleAlertIcon } from 'lucide-react'
-import { CATEGORIES, MENU, fcfa, type Categorie } from '@/lib/data'
+import { CATEGORIES, fcfa, type Categorie } from '@/lib/data'
 import { useAlba, vibrer } from '@/lib/store'
+import { useMenu } from '@/components/menu-store'
 import { Segments } from '@/components/kit'
 import { cn } from '@/lib/utils'
 
@@ -11,11 +12,14 @@ type Filtre = Categorie | 'Tout'
 
 /**
  * Grille d'encaissement : une cible tactile large par plat, un seul appui
- * pour ajouter. Les plats dont un ingrédient manque sont signalés sans
- * jamais bloquer la vente (le terrain décide, pas le logiciel).
+ * pour ajouter. La carte est le MENU ÉDITABLE du back-office (plats créés,
+ * retirés ou en rupture) — jamais une copie en dur. Les plats dont un
+ * ingrédient manque sont signalés sans jamais bloquer la vente (le terrain
+ * décide, pas le logiciel).
  */
 export function GrillePlats() {
   const { etat, envoyer } = useAlba()
+  const { platsActifs } = useMenu()
   const [filtre, setFiltre] = useState<Filtre>('Tout')
   const [requete, setRequete] = useState('')
 
@@ -28,7 +32,7 @@ export function GrillePlats() {
       etat.stock.filter((i) => i.stock < i.seuil).map((i) => i.id),
     )
     const map = new Map<string, 'rupture' | 'bas'>()
-    for (const plat of MENU) {
+    for (const plat of platsActifs) {
       if (plat.recette.some((r) => manquants.has(r.ingredientId))) {
         map.set(plat.id, 'rupture')
       } else if (plat.recette.some((r) => bas.has(r.ingredientId))) {
@@ -36,16 +40,17 @@ export function GrillePlats() {
       }
     }
     return map
-  }, [etat.stock])
+  }, [etat.stock, platsActifs])
 
   const plats = useMemo(() => {
     const q = requete.trim().toLowerCase()
-    return MENU.filter(
+    return platsActifs.filter(
       (p) =>
+        !p.rupture &&
         (filtre === 'Tout' || p.categorie === filtre) &&
         (q === '' || p.nom.toLowerCase().includes(q)),
     )
-  }, [filtre, requete])
+  }, [filtre, requete, platsActifs])
 
   const quantiteAuPanier = (platId: string) =>
     etat.panier.find((l) => l.platId === platId)?.qte ?? 0
@@ -74,7 +79,9 @@ export function GrillePlats() {
 
       {plats.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-          Aucun plat ne correspond. Efface la recherche pour revoir la carte.
+          {platsActifs.length === 0
+            ? 'Ta carte est vide pour le moment. Ajoute un plat depuis le back-office.'
+            : 'Aucun plat ne correspond. Efface la recherche pour revoir la carte.'}
         </p>
       ) : (
         <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4">
@@ -86,7 +93,11 @@ export function GrillePlats() {
                 <button
                   type="button"
                   onClick={() => {
-                    envoyer({ type: 'ajouter', platId: plat.id })
+                    envoyer({
+                      type: 'ajouter',
+                      platId: plat.id,
+                      plat: { id: plat.id, nom: plat.nom, prix: plat.prix },
+                    })
                     vibrer(10)
                   }}
                   className={cn(

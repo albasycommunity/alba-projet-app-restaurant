@@ -223,7 +223,7 @@ export function Hero() {
                 href="#plans"
                 className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.02] hover:bg-primary/90 active:scale-[0.98] sm:w-auto"
               >
-                Commencer l'essai gratuit
+                Commencer gratuitement
                 <ArrowRightIcon className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
               </Link>
               <Link

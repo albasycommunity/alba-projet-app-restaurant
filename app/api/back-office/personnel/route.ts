@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   Role,
   TOUTES_LES_PERMISSIONS,
+  PLANS_ABONNEMENT,
   type Permission,
 } from '@/lib/auth'
 import { aujourdhuiIso } from '@/lib/rh'
@@ -11,6 +12,7 @@ import {
   creerPersonnel,
   decouverteActionsRestantes,
   lireBdd,
+  palierDeRestaurant,
   trouverUtilisateurParEmail,
 } from '@/lib/server/bdd'
 import { exigerRole } from '@/lib/server/auth'
@@ -128,6 +130,32 @@ export async function POST(req: NextRequest) {
       { erreur: 'Un compte existe déjà avec cet email.' },
       { status: 409 },
     )
+  }
+
+  // VERROU DE PALIER d'abord : on ne dépense JAMAIS une action de
+  // découverte pour une création qui serait refusée à l'écriture.
+  const palierAvant = await palierDeRestaurant(restaurantId)
+  const limite = PLANS_ABONNEMENT[palierAvant].verrous.limiteStaff
+  if (limite !== null) {
+    const bddAvant = await lireBdd()
+    const actifs = bddAvant.utilisateurs.filter(
+      (u) =>
+        u.role === Role.STAFF &&
+        u.restaurantId === restaurantId &&
+        u.actif,
+    ).length
+    if (actifs >= limite) {
+      return NextResponse.json(
+        {
+          ok: false,
+          erreur:
+            'Ton abonnement Starter inclut 1 membre du personnel. Passe au plan Pro pour une équipe illimitée.',
+          raison: 'limite-staff',
+          planRequis: 'pro',
+        },
+        { status: 403 },
+      )
+    }
   }
 
   // Quota de découverte : en mode découverte, créer un employé est une

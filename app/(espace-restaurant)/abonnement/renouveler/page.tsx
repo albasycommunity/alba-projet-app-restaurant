@@ -132,6 +132,25 @@ export default function PageRenouveler() {
         const cible = params.get('plan')
         if (cible === 'pro' || cible === 'premium' || cible === 'starter') {
           setPalier(cible)
+        } else {
+          // Funnel : l'intention enregistrée lors de l'inscription depuis
+          // la grille des tarifs est reprise ici (pré-sélection).
+          try {
+            const intention = JSON.parse(
+              window.localStorage.getItem('alba:plan-intention') ?? 'null',
+            ) as { palier?: string; plan?: string } | null
+            if (
+              intention?.palier &&
+              (intention.palier === 'starter' ||
+                intention.palier === 'pro' ||
+                intention.palier === 'premium')
+            ) {
+              setPalier(intention.palier)
+              if (intention.plan === 'annuel') setPeriodicite('annuel')
+            }
+          } catch {
+            // intention illisible : valeurs par défaut
+          }
         }
         const raison = params.get('raison')
         if (raison) setRaison(raison)

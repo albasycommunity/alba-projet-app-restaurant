@@ -164,6 +164,14 @@ export function GestionPersonnel({
     )
 
   async function creer() {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formulaire.email)) {
+      setErreur('Email invalide')
+      return
+    }
+    if (formulaire.motDePasse.length < 8) {
+      setErreur('Le mot de passe doit contenir au moins 8 caractères')
+      return
+    }
     if (formulaire.permissions.length === 0) {
       setErreur('Coche au moins une zone pour ce membre.')
       return
@@ -257,7 +265,10 @@ export function GestionPersonnel({
             )}
             <button
               type="button"
-              onClick={() => setCreation(true)}
+              onClick={() => {
+                setErreur(null)
+                setCreation(true)
+              }}
               className={cn(
                 'flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-transform duration-300 ease-[var(--ease-spring)] hover:scale-[1.03]',
                 mettreEnAvantCreation &&
@@ -308,7 +319,10 @@ export function GestionPersonnel({
           action={
             <button
               type="button"
-              onClick={() => setCreation(true)}
+              onClick={() => {
+                setErreur(null)
+                setCreation(true)
+              }}
               className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground"
             >
               <PlusIcon className="size-3.5" />
@@ -356,8 +370,12 @@ export function GestionPersonnel({
               <div className="flex shrink-0 items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setEdition(membre)}
+                  onClick={() => {
+                    setErreur(null)
+                    setEdition(membre)
+                  }}
                   aria-label={`Modifier ${membre.nom}`}
+                  data-tooltip="Modifier le compte"
                   className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
                   <PencilIcon className="size-4" />
@@ -370,9 +388,7 @@ export function GestionPersonnel({
                       ? `Désactiver ${membre.nom}`
                       : `Réactiver ${membre.nom}`
                   }
-                  title={
-                    membre.actif ? 'Désactiver' : 'Réactiver'
-                  }
+                  data-tooltip={membre.actif ? 'Désactiver le compte' : 'Réactiver le compte'}
                   className={cn(
                     'flex size-9 items-center justify-center rounded-lg transition-colors',
                     membre.actif
@@ -397,13 +413,7 @@ export function GestionPersonnel({
         pied={
           <button
             type="button"
-            disabled={
-              chargement ||
-              formulaire.nom.trim().length < 2 ||
-              formulaire.email.length < 3 ||
-              formulaire.motDePasse.length < 8 ||
-              formulaire.poste.trim().length < 2
-            }
+            disabled={chargement}
             onClick={creer}
             className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary font-medium text-primary-foreground transition-all duration-300 ease-[var(--ease-spring)] active:scale-[0.98] disabled:opacity-50"
           >
@@ -425,6 +435,11 @@ export function GestionPersonnel({
           }}
           className="flex flex-col gap-4"
         >
+          {erreur && (
+            <p className="rounded-xl border border-destructive/25 bg-destructive/10 px-3.5 py-2.5 text-xs text-destructive">
+              {erreur}
+            </p>
+          )}
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">
               Nom complet
@@ -510,6 +525,11 @@ export function GestionPersonnel({
       >
         {edition && (
           <div className="flex flex-col gap-4">
+            {erreur && (
+              <p className="rounded-xl border border-destructive/25 bg-destructive/10 px-3.5 py-2.5 text-xs text-destructive">
+                {erreur}
+              </p>
+            )}
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-muted-foreground">
                 Nom complet

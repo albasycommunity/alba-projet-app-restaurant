@@ -17,8 +17,12 @@ export async function GET(req: NextRequest) {
   }
 
   const { utilisateur } = session
+  // L'abonnement est exposé à l'admin ET au personnel : la caisse doit
+  // appliquer le hard paywall de découverte quel que soit le rôle.
   const abonnement =
-    utilisateur.role === Role.RESTAURANT_ADMIN && utilisateur.restaurantId
+    (utilisateur.role === Role.RESTAURANT_ADMIN ||
+      utilisateur.role === Role.STAFF) &&
+    utilisateur.restaurantId
       ? await abonnementDeRestaurant(utilisateur.restaurantId)
       : null
 

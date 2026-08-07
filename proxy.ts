@@ -264,11 +264,16 @@ export async function proxy(request: NextRequest) {
     // sans aucune permission métier requise.
     if (zoneMonCompte) return NextResponse.next()
 
-    // Zone réellement autorisée → laisser passer, sauf si le palier du
-    // restaurant ne couvre pas le module (ex. permission Stock d'un
-    // Starter) : un STAFF ne voit jamais de lien de paiement, il est
-    // renvoyé vers la page « Accès refusé ».
+    // Zone réellement autorisée → laisser passer, sauf si :
+    // - l'abonnement du restaurant est suspendu (expiré / en attente) :
+    //   le STAFF est bloqué comme l'admin, mais sans jamais voir de lien
+    //   de paiement (page d'accès refusé) ;
+    // - le palier du restaurant ne couvre pas le module (ex. permission
+    //   Stock d'un Starter) : un STAFF est renvoyé vers « Accès refusé ».
     if (zonesAutorisees.some((z) => estDans(pathname, [z]))) {
+      if (!compteActif.abonnementActif) {
+        return rediriger(request, PAGE_ACCES_REFUSE)
+      }
       const module = moduleDuChemin(pathname)
       if (
         module &&

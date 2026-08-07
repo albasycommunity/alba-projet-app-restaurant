@@ -4,6 +4,7 @@ import { Inter, Space_Grotesk } from 'next/font/google'
 import { AlbaProvider } from '@/lib/store'
 import { AuthProvider } from '@/lib/auth-contexte'
 import { MenuProvider } from '@/components/menu-store'
+import { MouseTracker } from '@/components/mouse-tracker'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
@@ -45,6 +46,7 @@ export default function RootLayout({
             <MenuProvider>{children}</MenuProvider>
           </AlbaProvider>
         </AuthProvider>
+        <MouseTracker />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

@@ -60,12 +60,12 @@ export function Plans() {
             Plans
           </p>
           <h2 className="font-display mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            15 jours d'essai gratuit, puis un plan simple
+            Découvre Alba, puis choisis ton plan
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground text-pretty sm:text-base">
-            Chaque plan démarre par un essai gratuit complet. Aucun paiement
-            avant la fin de l'essai — et l'accès au back-office est entier dès
-            le premier jour.
+            Chaque restaurant démarre en mode découverte : le back-office est
+            entièrement ouvert dès le premier jour, sans paiement. Tu passes
+            au plan payant quand tu es prêt — rien d'autre à faire.
           </p>
         </div>
 
@@ -106,7 +106,7 @@ export function Plans() {
                   </div>
                   <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-[11px] font-semibold text-success">
                     <CheckIcon className="size-3" />
-                    15 j d'essai gratuit
+                    Paye quand tu veux
                   </span>
                 </div>
 
@@ -138,8 +138,8 @@ export function Plans() {
                   <p className="-mt-2 text-[11px] font-medium text-success">
                     2 mois offerts —{' '}
                     {fcfa(
-                      offre.periodicites.annuel.montant -
-                        offre.periodicites.mensuel.montant * 12,
+                      offre.periodicites.mensuel.montant * 12 -
+                        offre.periodicites.annuel.montant,
                     )}{' '}
                     d'économies
                   </p>
@@ -180,7 +180,7 @@ export function Plans() {
                 </div>
 
                 <Link
-                  href={`/register?plan=${plan}&palier=${palier}`}
+                  href={`/register?mode=restaurant&plan=${plan}&palier=${palier}`}
                   className={cn(
                     'group mt-auto flex h-12 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-all duration-300 ease-[var(--ease-spring)] active:scale-[0.98]',
                     enEvidence
@@ -188,7 +188,7 @@ export function Plans() {
                       : 'border border-border bg-secondary/50 text-foreground hover:border-primary/35 hover:bg-primary/8',
                   )}
                 >
-                  Commencer l'essai gratuit
+                  Commencer gratuitement
                   <ArrowRightIcon className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
                 </Link>
               </div>

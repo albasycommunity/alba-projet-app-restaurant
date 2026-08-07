@@ -37,14 +37,18 @@ type DonneesAbonnement = {
 export default function PageAbonnement() {
   const [donnees, setDonnees] = useState<DonneesAbonnement | null>(null)
   const [chargement, setChargement] = useState(true)
+  const [erreur, setErreur] = useState(false)
+  const [tentative, setTentative] = useState(0)
 
   useEffect(() => {
+    setChargement(true)
+    setErreur(false)
     fetch('/api/back-office/abonnement', { cache: 'no-store' })
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : null))
       .then(setDonnees)
-      .catch(() => setDonnees(null))
+      .catch(() => setErreur(true))
       .finally(() => setChargement(false))
-  }, [])
+  }, [tentative])
 
   if (chargement) {
     return (
@@ -55,8 +59,12 @@ export default function PageAbonnement() {
   }
 
   const abonnement = donnees?.abonnement ?? null
+  // Le statut n'est affiché que quand `abonnement` existe (branche
+  // gardée ci-dessous) — le repli ne peut jamais s'afficher.
   const statut = abonnement?.statut ?? 'expire'
-  const actionsRestantes = abonnement?.decouverteActionsRestantes ?? 3
+  // Jamais de valeur fantôme : si le compteur manque en découverte, on
+  // affiche épuisé plutôt que d'inventer un quota.
+  const actionsRestantes = abonnement?.decouverteActionsRestantes ?? 0
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('fr-FR', {
@@ -73,7 +81,21 @@ export default function PageAbonnement() {
       />
 
       <div className="flex flex-col gap-4 p-4 sm:p-6 lg:p-8">
-        {!abonnement ? (
+        {erreur ? (
+          <EmptyState
+            titre="Impossible de charger ton abonnement"
+            texte="Le serveur ne répond pas pour le moment. Réessaie dans un instant."
+            action={
+              <button
+                type="button"
+                onClick={() => setTentative((t) => t + 1)}
+                className="rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground"
+              >
+                Réessayer
+              </button>
+            }
+          />
+        ) : !abonnement ? (
           <EmptyState
             titre="Aucun abonnement actif"
             texte="Cet établissement n’a pas encore d’abonnement. Choisis un plan pour rouvrir le back-office."

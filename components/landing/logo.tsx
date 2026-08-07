@@ -1,10 +1,10 @@
 import { cn } from '@/lib/utils'
 
 /**
- * Marque alba : logo importé depuis public/logo.png (affiché partout :
- * navigation, footer, login, register, accueil, accès refusé). Le
- * `<span>` wrapper pilote la taille et le halo — les call-sites n'ont
- * pas changé.
+ * Marque alba : logo WebP (compressé depuis ~896 Ko à ~28 Ko) affiché
+ * partout : navigation, footer, login, register, accueil, accès refusé. Le
+ * `<span>` wrapper pilote la taille et le niveau de transparence — les
+ * call-sites n'ont pas changé.
  */
 export function LogoMark({
   className,
@@ -22,7 +22,7 @@ export function LogoMark({
         <span className="bg-radial-ember absolute -inset-3 rounded-full blur-md" />
       )}
       <img
-        src="/logo.png"
+        src="/logo.webp"
         alt=""
         className="relative size-full object-contain"
       />

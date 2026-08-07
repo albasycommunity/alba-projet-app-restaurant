@@ -76,6 +76,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUtilisateur(null)
     setRestaurantNom(null)
     setAbonnement(null)
+    try {
+      window.sessionStorage.removeItem('alba:onboarding:ferme')
+      window.sessionStorage.removeItem('alba:onboarding:fini')
+    } catch {}
     router.push('/login')
   }, [router])
 

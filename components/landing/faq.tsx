@@ -1,15 +1,37 @@
 'use client'
 
 import { PlusIcon, ShieldCheckIcon } from 'lucide-react'
+import {
+  PALIERS_ABONNEMENT,
+  PLANS_ABONNEMENT,
+  montantPalier,
+  type PalierAbonnement,
+} from '@/lib/auth'
 
-const FAQ = [
+const fcfa = (n: number) =>
+  new Intl.NumberFormat('fr-FR').format(Math.round(n)) + ' F'
+
+/**
+ * Le prix affiché se relit TOUJOURS depuis la grille de plans
+ * (`lib/auth.ts` costs de vérité) — jamais une copie en dur qui peut
+ * diverger.
+ */
+function textePrix() {
+  const par = (p: PalierAbonnement) =>
+    `${PLANS_ABONNEMENT[p].libelle} ${fcfa(montantPalier(p, 'mensuel'))}/mois`
+  const prixAn = (p: PalierAbonnement) => fcfa(montantPalier(p, 'annuel'))
+  const lignePaliers = PALIERS_ABONNEMENT.map((p) => par(p)).join(' · ')
+  return `Le compte client est gratuit. Le back-office démarre en mode découverte : explore tout, gratuitement, sans engagement ni paiement. Quand tu es prêt, tu choisis ton plan — ${lignePaliers}. À l'annuel, deux mois sont offerts (ex. le plus courant : ${prixAn('pro')}/an au lieu de ${fcfa(montantPalier('pro', 'mensuel') * 12)}). Le paiement se fait par Wave, Orange Money, Free Money ou espèces.`
+}
+
+const FAQ: { q: string; r: string | (() => string) }[] = [
   {
     q: 'Est-ce que ça marche vraiment sans connexion ?',
     r: "Oui. Alba écrit d'abord en local : encaisser, servir, ajuster le stock — rien de vital ne dépend du réseau. Dès que la connexion revient, tout se synchronise automatiquement. C'est le principe offline-first, pensé pour les coupures comme pour les zones mal couvertes.",
   },
   {
     q: 'Combien ça coûte ?',
-    r: "Le compte client est gratuit. Le back-office restaurant est à 25 000 F par mois, sans engagement, ou 250 000 F par an (2 mois offerts). Le paiement se fait par Wave, Orange Money, Free Money ou espèces.",
+    r: textePrix,
   },
   {
     q: 'Pour quel type de restaurant ?',
@@ -21,11 +43,11 @@ const FAQ = [
   },
   {
     q: "Puis-je essayer avant de m'abonner ?",
-    r: "Oui — chaque plan démarre avec 15 jours d'essai gratuit, sans paiement. Le back-office est entièrement ouvert dès le premier jour. À la fin de l'essai, tu passes au plan payant que tu as choisi pour continuer ; le compte client, lui, reste gratuit.",
+    r: `Oui — chaque restaurant démarre en mode découverte : le back-office est entièrement ouvert dès le premier jour, sans paiement ni carte bancaire. Tu explores Alba avec tes vraies données, puis tu passes au plan payant quand tu es prêt ; le compte client, lui, reste gratuit.`,
   },
   {
     q: 'Faut-il un matériel spécifique ?',
-    r: 'Non. Un smartphone Android ou un iPhone suffisent pour la salle et la cuisine ; un ordinateur est un plus pour le pilotage. Tout est conçu pour le tactile, une main, en pleine rush.',
+    r: "Non. Un smartphone Android ou un iPhone suffisent pour la salle et la cuisine ; un ordinateur est un plus pour le pilotage. Tout est conçu pour le tactile, une main, en pleine rush.",
   },
 ]
 
@@ -58,7 +80,7 @@ export function FoireAuxQuestions() {
               </summary>
               <div className="px-5 pb-5">
                 <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
-                  {f.r}
+                  {typeof f.r === 'function' ? f.r() : f.r}
                 </p>
               </div>
             </details>
