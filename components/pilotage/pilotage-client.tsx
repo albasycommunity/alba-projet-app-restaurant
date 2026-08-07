@@ -7,6 +7,7 @@ import {
   CheckIcon,
   CopyIcon,
   FlameIcon,
+  ReceiptTextIcon,
   ScaleIcon,
   ShareIcon,
   TargetIcon,
@@ -19,22 +20,23 @@ import {
   Badge,
   Card,
   CardTitle,
+  EmptyState,
   PageHeader,
   Sheet,
   StatTile,
 } from '@/components/kit'
 import { CountUp } from '@/components/count-up'
 import { useAlba, vibrer } from '@/lib/store'
+import { useAuth } from '@/lib/auth-contexte'
 import {
   MENU,
   OBJECTIF_JOUR,
-  RESTAURANT,
   fcfa,
   fcfaCourt,
 } from '@/lib/data'
 
 /** Rapport de fin de service, prêt à coller dans WhatsApp. */
-function redigerRapport(d: {
+function redigerRapport(nomRestaurant: string, d: {
   caJour: number
   tickets: number
   panierMoyen: number
@@ -49,7 +51,7 @@ function redigerRapport(d: {
   ratioRH: number
 }) {
   const lignes = [
-    `${RESTAURANT.nom} — rapport du jour`,
+    `${nomRestaurant} — rapport du jour`,
     '',
     `Chiffre d'affaires : ${fcfa(d.caJour)}`,
     `Objectif : ${d.partObjectif} % de ${fcfa(OBJECTIF_JOUR)}`,
@@ -72,8 +74,11 @@ function redigerRapport(d: {
 
 export function PilotageClient() {
   const { indicateurs, etat, notifier } = useAlba()
+  const { utilisateur, restaurantNom } = useAuth()
   const [rapportOuvert, setRapportOuvert] = useState(false)
   const [copie, setCopie] = useState(false)
+
+  const prenom = utilisateur?.nom?.split(' ')[0] ?? 'à bord'
 
   const topPlats = useMemo(
     () =>
@@ -104,7 +109,7 @@ export function PilotageClient() {
 
   const rapport = useMemo(
     () =>
-      redigerRapport({
+      redigerRapport(restaurantNom ?? 'Mon restaurant', {
         caJour: indicateurs.caJour,
         tickets: indicateurs.tickets,
         panierMoyen: indicateurs.panierMoyen,
@@ -118,7 +123,7 @@ export function PilotageClient() {
         coutRH: indicateurs.coutRH,
         ratioRH: indicateurs.ratioRH,
       }),
-    [indicateurs, topPlats, alertes],
+    [indicateurs, topPlats, alertes, restaurantNom],
   )
 
   const envoyerWhatsApp = () => {
@@ -147,10 +152,49 @@ export function PilotageClient() {
   const restePourObjectif = Math.max(0, OBJECTIF_JOUR - indicateurs.caJour)
   const ticketsLocaux = etat.commandes.filter((c) => c.id.startsWith('local-')).length
 
+  // Aucun encaissement réel encore : on ne montre pas de zéros trompeurs,
+  // on invite à la première vente.
+  const aucuneDonnee =
+    indicateurs.tickets === 0 &&
+    indicateurs.caJour === 0 &&
+    indicateurs.totalDecaissements === 0
+
+  if (aucuneDonnee) {
+    return (
+      <div className="flex flex-col">
+        <PageHeader
+          titre={`Bonjour ${prenom}`}
+          sous="Le pilotage se remplit tout seul à chaque encaissement, ici."
+        />
+        <div className="p-4 sm:p-6 lg:p-8">
+          <EmptyState
+            titre="Aucune vente encaissée aujourd’hui"
+            texte="Enregistre ton premier ticket à la caisse : le chiffre d’affaires, la réconciliation et la rentabilité apparaîtront ici, calculés sur tes vraies ventes."
+            action={
+              <Link
+                href="/caisse"
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-sm hover:brightness-110"
+              >
+                <ReceiptTextIcon className="size-4" />
+                Prendre un ticket
+              </Link>
+            }
+          />
+          {etat.enAttente.length > 0 && (
+            <p className="mt-4 text-center text-xs text-muted-foreground">
+              {etat.enAttente.length} ticket(s) déjà encaissé(s) en attente de
+              synchronisation — ils apparaîtront dès qu’ils remonteront.
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col">
       <PageHeader
-        titre={`Bonjour ${RESTAURANT.gerante.split(' ')[0]}`}
+        titre={`Bonjour ${prenom}`}
         sous="Chaque chiffre ci-dessous se recalcule à l’encaissement. Rien n’est figé."
         action={
           <button
@@ -177,12 +221,14 @@ export function PilotageClient() {
                 <span className="ml-1 text-2xl text-muted-foreground">FCFA</span>
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <Badge ton="succes">
-                  <TrendingUpIcon className="size-3" />
-                  +18 % vs hier
-                </Badge>
+                {indicateurs.tickets > 0 && (
+                  <Badge ton="succes">
+                    <TrendingUpIcon className="size-3" />
+                    Encaissements de la journée
+                  </Badge>
+                )}
                 <span className="text-xs text-muted-foreground tnum">
-                  {indicateurs.tickets} tickets · panier{' '}
+                  {indicateurs.tickets} ticket{indicateurs.tickets > 1 ? 's' : ''} · panier{' '}
                   {fcfa(indicateurs.panierMoyen)}
                 </span>
                 {ticketsLocaux > 0 && (

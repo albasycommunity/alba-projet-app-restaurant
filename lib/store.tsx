@@ -11,7 +11,6 @@ import {
   useState,
 } from 'react'
 import {
-  AFFLUENCE,
   CLIENTS,
   EQUIPE,
   FORMATIONS,
@@ -183,8 +182,10 @@ function etatInitial(): Etat {
     prochainNumero: 253,
     enAttente: [],
     decaissements: [],
-    caBase: 932000,
-    ticketsBase: 148,
+    // Plus de socle de démonstration : les indicateurs comptent
+    // uniquement les encaissements réels de la session.
+    caBase: 0,
+    ticketsBase: 0,
   }
 }
 
@@ -774,6 +775,8 @@ export type Indicateurs = {
   clientsOr: number
   /** Clients à relancer : anniversaire ou absence prolongée. */
   aRelancer: ClientFidele[]
+  /** Total décaissé aujourd'hui (sorties d'espèces tracées). */
+  totalDecaissements: number
 }
 
 type Contexte = {
@@ -1012,24 +1015,25 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       (s, c) => s + c.reglements.reduce((t, r) => t + r.montant, 0),
       0,
     )
-    const caJour = etat.caBase + caLocal
-    const tickets = etat.ticketsBase + locales.length
+    // CA et tickets : uniquement les encaissements réels de la session.
+    // Le « socle » de démonstration (caBase/ticketsBase) n'est plus compté.
+    const caJour = caLocal
+    const tickets = locales.length
 
-    // Répartition par mode : socle du jour + encaissements de la session
+    // Répartition par mode : calculée uniquement depuis les règlements
+    // réellement enregistrés sur les tickets de la session.
     const socle: Record<ModePaiement, number> = {
-      Wave: 412000,
-      Espèces: 286000,
-      'Orange Money': 178000,
-      'Free Money': 56000,
+      Wave: 0,
+      Espèces: 0,
+      'Orange Money': 0,
+      'Free Money': 0,
     }
     for (const c of locales) {
       for (const r of c.reglements) socle[r.mode] += r.montant
     }
-    
-    // Total des décaissements
+
+    // Total des décaissements de la journée — déduits du fond d'espèces.
     const totalDecaissements = etat.decaissements.reduce((s, d) => s + d.montant, 0)
-    
-    // On déduit les décaissements des espèces pour le fond de caisse net
     socle['Espèces'] = Math.max(0, socle['Espèces'] - totalDecaissements)
 
     const totalModes = Object.values(socle).reduce((s, v) => s + v, 0) || 1
@@ -1041,14 +1045,29 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       }))
       .sort((a, b) => b.montant - a.montant)
 
-    // Affluence : le socle historique + ce qui rentre à l'heure courante
-    const heureCourante = `${String(new Date().getHours()).padStart(2, '0')}h`
-    const affluence = AFFLUENCE.map((a) => ({ ...a }))
-    const creneau = affluence.find((a) => a.heure === heureCourante)
-    if (creneau && caLocal > 0) creneau.ca += Math.round(caLocal / 1000)
+    // Affluence réelle : les montants encaissés regroupés par heure,
+    // en k FCFA. Les créneaux de soirée restent visibles pour la forme
+    // de la courbe ; sans aucune vente, le graphique est vide (la page
+    // affiche alors son écran d'accueil).
+    const slotsAffluence = Array.from({ length: 24 }, (_, h) => ({
+      heure: `${String(h).padStart(2, '0')}h`,
+      ca: 0,
+    }))
+    for (const c of locales) {
+      const slot = slotsAffluence.find(
+        (a) => a.heure === `${String(new Date(c.recueA).getHours()).padStart(2, '0')}h`,
+      )
+      if (!slot) continue
+      for (const r of c.reglements) slot.ca += r.montant
+    }
+    const affluence =
+      slotsAffluence
+        .map((a) => ({ ...a, ca: Math.round(a.ca / 1000) }))
+        .filter((a) => a.ca > 0 || (a.heure >= '18h' && a.heure <= '22h'))
 
+    // Ventes par plat : reconstruction depuis les tickets encaissés.
+    // Les « vendusJour » statiques du menu de démo ne comptent plus.
     const ventesParPlat = new Map<string, number>()
-    for (const plat of MENU) ventesParPlat.set(plat.id, plat.vendusJour)
     for (const c of locales) {
       for (const l of c.lignes) {
         ventesParPlat.set(l.platId, (ventesParPlat.get(l.platId) ?? 0) + l.qte)
@@ -1126,8 +1145,9 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
     coutRH = Math.round(coutRH)
     const ratioRH = caJour > 0 ? Math.round((coutRH / caJour) * 100) : 0
 
-    // Performance individuelle : socle du matin + tickets réellement
-    // encaissés depuis l'ouverture de la session par cette personne.
+    // Performance individuelle : uniquement les tickets réellement
+    // encaissés depuis l'ouverture de la session par cette personne
+    // (le socle `ventesJour` de la démo n'est plus compté).
     const performance = etat.equipe
       .map((employe) => {
         const siens = locales.filter((c) => c.encaisseParId === employe.id)
@@ -1135,7 +1155,7 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
           (s, c) => s + c.reglements.reduce((t, r) => t + r.montant, 0),
           0,
         )
-        const ventes = employe.ventesJour + ventesLocales
+        const ventes = ventesLocales
         const nbTickets = siens.length
         return {
           employe,
