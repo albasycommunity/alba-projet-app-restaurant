@@ -128,7 +128,7 @@ export default async function PilotagePage() {
                         height: `${h}%`,
                         animation: `alba-rise 0.6s var(--ease-organic) ${i * 40}ms both`,
                       }}
-                      title={`${a.heure} — ${a.ca} k FCFA`}
+                      data-tooltip={`${a.heure} — ${a.ca} k FCFA`}
                     />
                     <span className="text-[10px] text-muted-foreground tnum">
                       {a.heure}

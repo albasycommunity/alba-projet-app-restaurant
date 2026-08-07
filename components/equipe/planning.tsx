@@ -135,7 +135,7 @@ export function Planning({ equipe }: { equipe: Employe[] }) {
                     return (
                       <div
                         key={`${c.employeId}-${c.debut}`}
-                        title={`${employe.nom} — ${c.debut}h à ${c.fin}h`}
+                        data-tooltip={`${employe.nom} — ${c.debut}h à ${c.fin}h`}
                         className="absolute flex items-center overflow-hidden rounded-md border border-primary/30 bg-primary/25 px-1.5 transition-transform duration-300 ease-[var(--ease-spring)] hover:scale-[1.02]"
                         style={{
                           ...bande(c.debut, c.fin),

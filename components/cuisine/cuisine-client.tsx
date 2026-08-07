@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CookingPotIcon, PartyPopperIcon } from 'lucide-react'
 import { STATUTS, type StatutCommande } from '@/lib/data'
 import { useAlba } from '@/lib/store'
@@ -30,6 +30,17 @@ export function CuisineClient() {
     for (const liste of groupes.values()) liste.sort((a, b) => a.recueA - b.recueA)
     return groupes
   }, [etat.commandes])
+
+  const nbRecuesActuel = parStatut.get('recue')?.length ?? 0
+  const precedentNbRecues = useRef(nbRecuesActuel)
+
+  useEffect(() => {
+    if (nbRecuesActuel > precedentNbRecues.current) {
+      // Nouvelle commande reçue !
+      jouerSonClochette()
+    }
+    precedentNbRecues.current = nbRecuesActuel
+  }, [nbRecuesActuel])
 
   const actives = COLONNES.reduce(
     (n, s) => n + (parStatut.get(s)?.length ?? 0),
@@ -161,4 +172,31 @@ function ListeColonne({
       ))}
     </div>
   )
+}
+
+function jouerSonClochette() {
+  if (typeof window === 'undefined') return
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextClass) return
+    const ctx = new AudioContextClass()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime) // Note La (A5)
+    osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.1) // Glisse vers A6
+
+    gain.gain.setValueAtTime(0, ctx.currentTime)
+    gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8)
+
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.8)
+  } catch (e) {
+    // Ignorer silencieusement si bloqué par les politiques du navigateur (autoplay)
+  }
 }

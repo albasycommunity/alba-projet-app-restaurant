@@ -223,7 +223,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={href}
                 aria-current={actif ? 'page' : undefined}
-                title={
+                data-tooltip={
                   verrouille
                     ? `Inclus dans le plan ${LIBELLE_PALIER[palierMinimumPourModule(item.permission!)]}`
                     : undefined
@@ -345,7 +345,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               key={item.href}
               href={href}
               aria-current={actif ? 'page' : undefined}
-              title={
+              data-tooltip={
                 verrouille
                   ? `Inclus dans le plan ${LIBELLE_PALIER[palierMinimumPourModule(item.permission!)]}`
                   : undefined
@@ -415,7 +415,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={href}
-                title={
+                data-tooltip={
                   verrouille
                     ? `Inclus dans le plan ${LIBELLE_PALIER[palierMinimumPourModule(item.permission!)]}`
                     : undefined

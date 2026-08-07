@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowRightIcon, ReceiptTextIcon, XIcon } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowRightIcon, LockIcon, ReceiptTextIcon, XIcon } from 'lucide-react'
 import { fcfa } from '@/lib/data'
 import { useAlba, vibrer } from '@/lib/store'
-import { Card, CardTitle, PageHeader, Sheet } from '@/components/kit'
+import { Card, CardTitle, EmptyState, PageHeader, Sheet } from '@/components/kit'
 import { GrillePlats } from '@/components/caisse/grille-plats'
 import { Ticket } from '@/components/caisse/ticket'
 import { Paiement } from '@/components/caisse/paiement'
@@ -20,6 +21,7 @@ export function CaisseClient() {
   const [ticketOuvert, setTicketOuvert] = useState(false)
   const [paiementOuvert, setPaiementOuvert] = useState(false)
 
+  const caissier = etat.equipe.find((e) => e.caisse && e.statut !== 'absent')
   const articles = etat.panier.reduce((n, l) => n + l.qte, 0)
   const vide = articles === 0
 
@@ -28,6 +30,25 @@ export function CaisseClient() {
     setTicketOuvert(false)
     setPaiementOuvert(true)
     vibrer(14)
+  }
+
+  if (!caissier) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center">
+        <EmptyState
+          titre="Caisse fermée"
+          texte="La caisse n'est actuellement confiée à personne. Rendez-vous dans l'onglet Équipe pour attribuer la caisse à un membre présent."
+          action={
+            <Link
+              href="/equipe"
+              className="mt-4 inline-flex items-center justify-center rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-sm hover:brightness-110"
+            >
+              Aller à l'Équipe
+            </Link>
+          }
+        />
+      </div>
+    )
   }
 
   return (

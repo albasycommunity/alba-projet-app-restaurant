@@ -13,6 +13,7 @@ import {
   TrendingUpIcon,
   TriangleAlertIcon,
   UsersIcon,
+  WalletIcon,
 } from 'lucide-react'
 import {
   Badge,
@@ -44,6 +45,8 @@ function redigerRapport(d: {
   parMode: { mode: string; montant: number }[]
   top: { nom: string; vendus: number }[]
   alertes: string[]
+  coutRH: number
+  ratioRH: number
 }) {
   const lignes = [
     `${RESTAURANT.nom} — rapport du jour`,
@@ -52,6 +55,7 @@ function redigerRapport(d: {
     `Objectif : ${d.partObjectif} % de ${fcfa(OBJECTIF_JOUR)}`,
     `Tickets : ${d.tickets} · panier moyen ${fcfa(d.panierMoyen)}`,
     `Marge brute : ${fcfa(d.margeJour)} · food cost ${d.foodCostJour} %`,
+    `Masse salariale : ${fcfa(d.coutRH)} (${d.ratioRH} % du CA)`,
     d.pertesJour > 0 ? `Pertes déclarées : ${fcfa(d.pertesJour)}` : null,
     '',
     'Encaissements',
@@ -111,6 +115,8 @@ export function PilotageClient() {
         parMode: indicateurs.parMode,
         top: topPlats.map((p) => ({ nom: p.nom, vendus: p.vendus })),
         alertes,
+        coutRH: indicateurs.coutRH,
+        ratioRH: indicateurs.ratioRH,
       }),
     [indicateurs, topPlats, alertes],
   )
@@ -242,7 +248,7 @@ export function PilotageClient() {
                         height: `${Math.max(h, 3)}%`,
                         animation: `alba-rise 0.6s var(--ease-organic) ${i * 40}ms both`,
                       }}
-                      title={`${a.heure} — ${a.ca} k FCFA`}
+                      data-tooltip={`${a.heure} — ${a.ca} k FCFA`}
                     />
                     <span
                       className={`text-[10px] tnum ${
@@ -299,7 +305,7 @@ export function PilotageClient() {
         </Card>
 
         {/* La rentabilité réelle, pas seulement le CA */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:col-span-3 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:col-span-3 lg:grid-cols-5">
           <StatTile
             libelle="Marge brute du jour"
             valeur={fcfa(indicateurs.margeJour)}
@@ -329,6 +335,13 @@ export function PilotageClient() {
             valeur={indicateurs.equipePresente}
             detail={`sur ${etat.equipe.length} personnes`}
             icone={<UsersIcon className="size-3.5" />}
+          />
+          <StatTile
+            libelle="Masse salariale"
+            valeur={fcfa(indicateurs.coutRH)}
+            detail={`${indicateurs.ratioRH} % du CA`}
+            icone={<WalletIcon className="size-3.5" />}
+            ton={indicateurs.ratioRH > 35 ? 'alerte' : 'neutre'}
           />
         </div>
 

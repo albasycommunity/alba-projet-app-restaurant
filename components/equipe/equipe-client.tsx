@@ -170,6 +170,16 @@ export function EquipeClient() {
                 })
               }}
               onCaisse={() => {
+                if (indicateurs.haccpRestant > 0) {
+                  vibrer([50, 100, 50]) // double vibration d'erreur
+                  notifier({
+                    ton: 'alerte',
+                    titre: 'Hygiène non validée',
+                    detail: `Il reste ${indicateurs.haccpRestant} tâche(s) d'hygiène à faire avant de pouvoir ouvrir la caisse.`,
+                  })
+                  return
+                }
+
                 envoyer({ type: 'confierCaisse', id: e.id })
                 vibrer(14)
                 notifier({

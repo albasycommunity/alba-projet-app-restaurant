@@ -1,9 +1,11 @@
 'use client'
 
-import { useMemo } from 'react'
-import { PrinterIcon, ShareIcon, SparklesIcon } from 'lucide-react'
+import { useMemo, useState, useEffect } from 'react'
+import { PrinterIcon, ShareIcon, SparklesIcon, DownloadIcon } from 'lucide-react'
 import { OBJECTIF_JOUR, RESTAURANT, fcfa, type Reglement } from '@/lib/data'
 import { useAlba } from '@/lib/store'
+import { PDFDownloadLink } from '@react-pdf/renderer'
+import { PdfFacture } from './pdf-facture'
 
 /**
  * Confirmation d'encaissement : le billet se dépose dans la jauge de caisse,
@@ -14,15 +16,22 @@ export function Recu({
   ref_,
   reglements,
   total,
+  lignes,
   onTerminer,
 }: {
   ref_: string
   reglements: Reglement[]
   total: number
+  lignes: any[]
   onTerminer: () => void
 }) {
   const { indicateurs } = useAlba()
   const objectifAtteint = indicateurs.caJour >= OBJECTIF_JOUR
+  const [isClient, setIsClient] = useState(false)
+
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
 
   const texteRecu = useMemo(() => {
     const lignes = [
@@ -152,14 +161,29 @@ export function Recu({
           <ShareIcon className="size-4" />
           Envoyer le reçu sur WhatsApp
         </button>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3.5 text-sm font-medium transition-colors hover:bg-secondary/60"
-        >
-          <PrinterIcon className="size-4" />
-          Imprimer
-        </button>
+        {isClient && (
+          <PDFDownloadLink
+            document={
+              <PdfFacture
+                refFacture={ref_}
+                dateFacture={new Date().toISOString()}
+                reglements={reglements}
+                total={total}
+                lignes={lignes}
+              />
+            }
+            fileName={`Facture_${ref_}.pdf`}
+            className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3.5 text-sm font-medium transition-colors hover:bg-secondary/60"
+          >
+            {/* @ts-ignore : react-pdf inner render prop typings can be weird */}
+            {({ loading }) => (
+              <>
+                {loading ? <DownloadIcon className="size-4 animate-pulse" /> : <PrinterIcon className="size-4" />}
+                {loading ? 'Génération PDF...' : 'Télécharger la Facture PDF'}
+              </>
+            )}
+          </PDFDownloadLink>
+        )}
         <button
           type="button"
           onClick={onTerminer}

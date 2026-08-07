@@ -68,7 +68,7 @@ function Navigation() {
                   onClick={deconnecter}
                   className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground"
                   aria-label="Se déconnecter"
-                  title="Se déconnecter"
+                  data-tooltip="Se déconnecter"
                 >
                   <LogOutIcon className="size-4" />
                 </button>

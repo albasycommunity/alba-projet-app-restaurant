@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from 'react'
 import {
@@ -120,6 +121,7 @@ type Action =
   | { type: 'avancer'; id: string }
   | { type: 'reculer'; id: string }
   | { type: 'annulerCommande'; id: string }
+  | { type: 'recevoirCommandeExterne'; commande: Commande }
   | { type: 'haccpBascule'; id: string; par: string }
   | {
       type: 'haccpValider'
@@ -263,9 +265,38 @@ function reducer(etat: Etat, action: Action): Etat {
       return { ...etatInitial(), proprietaire: action.proprietaire ?? null }
 
     case 'ajouter': {
-      const plat =
-        action.plat ?? MENU.find((p) => p.id === action.platId)
+      const platBase = action.plat ?? MENU.find((p) => p.id === action.platId)
+      if (!platBase) return etat
+      // On a besoin du plat complet pour la recette
+      const plat = MENU.find((p) => p.id === platBase.id)
       if (!plat) return etat
+
+      // Vérification stricte du stock disponible (en tenant compte du panier actuel)
+      const consommation = new Map<string, number>()
+      for (const ligne of etat.panier) {
+        const p = MENU.find((m) => m.id === ligne.platId)
+        if (!p) continue
+        for (const r of p.recette) {
+          consommation.set(
+            r.ingredientId,
+            (consommation.get(r.ingredientId) ?? 0) + r.qte * ligne.qte,
+          )
+        }
+      }
+
+      let enRupture = false
+      for (const r of plat.recette) {
+        const ing = etat.stock.find((i) => i.id === r.ingredientId)
+        if (!ing) continue
+        const dejaConsomme = consommation.get(r.ingredientId) ?? 0
+        if (ing.stock - dejaConsomme < r.qte) {
+          enRupture = true
+          break
+        }
+      }
+
+      if (enRupture) return etat // Protection métier forte
+
       const existante = etat.panier.find((l) => l.platId === plat.id)
       return {
         ...etat,
@@ -368,6 +399,14 @@ function reducer(etat: Etat, action: Action): Etat {
         commandes: etat.commandes.map((c) =>
           c.id === action.id ? { ...c, statut: suite[c.statut] } : c,
         ),
+      }
+    }
+
+    case 'recevoirCommandeExterne': {
+      if (etat.commandes.find((c) => c.id === action.commande.id)) return etat
+      return {
+        ...etat,
+        commandes: [action.commande, ...etat.commandes],
       }
     }
 
@@ -706,6 +745,8 @@ export type Indicateurs = {
     fiabilite: number
     tient: boolean
   }[]
+  coutRH: number
+  ratioRH: number
   /** Somme des points de fidélité en circulation — c'est une dette. */
   pointsEnCirculation: number
   clientsOr: number
@@ -819,6 +860,53 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       // quota plein : l'app continue de fonctionner en mémoire
     }
   }, [etat, pret, restaurantId])
+
+  // Synchronisation des nouvelles commandes (API + Broadcast local)
+  const previousCommandesRef = useRef<Commande[]>(etatInitial().commandes)
+  useEffect(() => {
+    if (!pret) return
+    const prev = previousCommandesRef.current
+    const added = etat.commandes.filter(
+      (c) => !prev.find((old) => old.id === c.id),
+    )
+    previousCommandesRef.current = etat.commandes
+
+    added.forEach((cmd) => {
+      // Si la commande a été créée localement par CE client
+      if (cmd.id.startsWith('local-')) {
+        // Envoi au backend (Supabase)
+        fetch('/api/caisse/commandes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cmd),
+        }).catch(() => {
+          // Géré hors-ligne plus tard
+        })
+
+        // Broadcast local pour les autres onglets
+        if (typeof window !== 'undefined') {
+          const channel = new BroadcastChannel('alba-sync')
+          channel.postMessage({ type: 'NOUVELLE_COMMANDE', commande: cmd })
+          channel.close()
+        }
+      }
+    })
+  }, [etat.commandes, pret])
+
+  // Écoute du BroadcastChannel pour la synchronisation multi-onglets (sans Supabase)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const channel = new BroadcastChannel('alba-sync')
+    channel.onmessage = (event) => {
+      if (event.data?.type === 'NOUVELLE_COMMANDE') {
+        dispatch({
+          type: 'recevoirCommandeExterne',
+          commande: event.data.commande,
+        })
+      }
+    }
+    return () => channel.close()
+  }, [])
 
   const notifier = useCallback((n: Omit<Notif, 'id'>) => {
     const id = Date.now() + Math.random()
@@ -956,6 +1044,21 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       .filter((r): r is NonNullable<typeof r> => r !== null)
       .sort((a, b) => a.jours - b.jours)
 
+    const maintenant = new Date()
+    const heuresMaintenant = maintenant.getHours() + maintenant.getMinutes() / 60
+    let coutRH = 0
+    etat.equipe.forEach((e) => {
+      if (e.arrivee && e.statut !== 'absent') {
+        const [h, m] = e.arrivee.split(':').map(Number)
+        const arriveeDec = h + m / 60
+        let duree = heuresMaintenant - arriveeDec
+        if (duree < 0) duree += 24 // Crossed midnight
+        coutRH += duree * (e.tauxHoraire || 0)
+      }
+    })
+    coutRH = Math.round(coutRH)
+    const ratioRH = caJour > 0 ? Math.round((coutRH / caJour) * 100) : 0
+
     // Performance individuelle : socle du matin + tickets réellement
     // encaissés depuis l'ouverture de la session par cette personne.
     const performance = etat.equipe
@@ -1014,6 +1117,8 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
         (c) => c.statut === 'recue' || c.statut === 'preparation',
       ).length,
       performance,
+      coutRH,
+      ratioRH,
       pointsEnCirculation,
       clientsOr: etat.clients.filter((c) => c.niveau === 'Or').length,
       aRelancer: etat.clients.filter(

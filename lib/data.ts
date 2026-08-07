@@ -470,14 +470,16 @@ export type Employe = {
   badge: string
   /** l'employé tient la caisse : ses encaissements lui sont attribués */
   caisse: boolean
+  /** Salaire horaire (FCFA/h) pour calculer le coût RH */
+  tauxHoraire?: number
 }
 
 export const EQUIPE: Employe[] = [
-  { id: 'e1', nom: 'Awa Diop', role: 'Cheffe de salle', statut: 'present', arrivee: '07:02', ventesJour: 184000, erreurs: 0, modules: ['f1', 'f2', 'f3', 'f4'], badge: 'ALBA-4417', caisse: false },
-  { id: 'e2', nom: 'Ibrahima Fall', role: 'Cuisinier', statut: 'present', arrivee: '06:48', ventesJour: 0, erreurs: 1, modules: ['f2', 'f3'], badge: 'ALBA-2098', caisse: false },
-  { id: 'e3', nom: 'Sokhna Mbaye', role: 'Caissière', statut: 'pause', arrivee: '08:15', ventesJour: 226500, erreurs: 2, modules: ['f1', 'f4'], badge: 'ALBA-7731', caisse: true },
-  { id: 'e4', nom: 'Cheikh Sarr', role: 'Livreur', statut: 'present', arrivee: '10:30', ventesJour: 48000, erreurs: 0, modules: ['f4'], badge: 'ALBA-5562', caisse: false },
-  { id: 'e5', nom: 'Ndèye Gueye', role: 'Commis', statut: 'absent', ventesJour: 0, erreurs: 0, modules: [], badge: 'ALBA-9014', caisse: false },
+  { id: 'e1', nom: 'Awa Diop', role: 'Cheffe de salle', statut: 'present', arrivee: '07:02', ventesJour: 184000, erreurs: 0, modules: ['f1', 'f2', 'f3', 'f4'], badge: 'ALBA-4417', caisse: false, tauxHoraire: 2000 },
+  { id: 'e2', nom: 'Ibrahima Fall', role: 'Cuisinier', statut: 'present', arrivee: '06:48', ventesJour: 0, erreurs: 1, modules: ['f2', 'f3'], badge: 'ALBA-2098', caisse: false, tauxHoraire: 1800 },
+  { id: 'e3', nom: 'Sokhna Mbaye', role: 'Caissière', statut: 'pause', arrivee: '08:15', ventesJour: 226500, erreurs: 2, modules: ['f1', 'f4'], badge: 'ALBA-7731', caisse: true, tauxHoraire: 1500 },
+  { id: 'e4', nom: 'Cheikh Sarr', role: 'Livreur', statut: 'present', arrivee: '10:30', ventesJour: 48000, erreurs: 0, modules: ['f4'], badge: 'ALBA-5562', caisse: false, tauxHoraire: 1200 },
+  { id: 'e5', nom: 'Ndèye Gueye', role: 'Commis', statut: 'absent', ventesJour: 0, erreurs: 0, modules: [], badge: 'ALBA-9014', caisse: false, tauxHoraire: 1200 },
 ]
 
 /** Un mouvement de pointage de la journée — la feuille de présence réelle. */

@@ -46,6 +46,7 @@ export function Paiement({
     ref: string
     reglements: Reglement[]
     total: number
+    lignes: any[]
   } | null>(null)
 
   useEffect(() => {
@@ -118,11 +119,28 @@ export function Paiement({
         })
       }
     }
-    const ref = `#${etat.prochainNumero}`
+    let ref = `#${etat.prochainNumero}`
     const horsLigne = typeof navigator !== 'undefined' && !navigator.onLine
+    
+    if (!horsLigne) {
+      try {
+        const repFacture = await fetch('/api/caisse/factures', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reglements, total }),
+        })
+        if (repFacture.ok) {
+          const donnees = await repFacture.json()
+          if (donnees.numeroFacture) ref = donnees.numeroFacture
+        }
+      } catch (err) {
+        console.error('Erreur génération facture', err)
+      }
+    }
+
     envoyer({ type: 'encaisser', reglements, ref })
     vibrer([16, 40, 22])
-    setEncaisse({ ref, reglements, total })
+    setEncaisse({ ref, reglements, total, lignes: etat.panier })
     notifier({
       ton: 'succes',
       titre: `Ticket ${ref} encaissé`,
@@ -145,6 +163,7 @@ export function Paiement({
           ref_={encaisse.ref}
           reglements={encaisse.reglements}
           total={encaisse.total}
+          lignes={encaisse.lignes as any}
           onTerminer={onFermer}
         />
       </Sheet>
