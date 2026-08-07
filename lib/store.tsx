@@ -141,7 +141,7 @@ type Action =
   | { type: 'signalerErreur'; id: string }
   | { type: 'crediterVisite'; id: string; montant: number }
   | { type: 'recompenser'; id: string; libelle: string; cout: number }
-  | { type: 'synchroniser' }
+  | { type: 'commandeSynchronisee'; id: string }
   | { type: 'hydrater'; etat: Etat; proprietaire?: string }
   | { type: 'reinitialiser'; proprietaire?: string }
 
@@ -360,7 +360,7 @@ function reducer(etat: Etat, action: Action): Etat {
         estimation: estimerPreparation(lignes, enCours),
         lignes,
         reglements: action.reglements,
-        synchronise: !horsLigne,
+        synchronise: false, // Toujours false au départ, validé plus tard par accusé de réception
         encaisseParId: caissier?.id,
       }
       // Si le ticket porte le nom d'un client fidèle, ses points tombent
@@ -383,7 +383,7 @@ function reducer(etat: Etat, action: Action): Etat {
         panier: [],
         destination: { canal: etat.destination.canal },
         prochainNumero: etat.prochainNumero + 1,
-        enAttente: horsLigne ? [...etat.enAttente, commande.id] : etat.enAttente,
+        enAttente: [...etat.enAttente, commande.id], // Toujours en attente d'envoi
       }
     }
 
@@ -684,12 +684,12 @@ function reducer(etat: Etat, action: Action): Etat {
       }
     }
 
-    case 'synchroniser':
+    case 'commandeSynchronisee':
       return {
         ...etat,
-        enAttente: [],
+        enAttente: etat.enAttente.filter((id) => id !== action.id),
         commandes: etat.commandes.map((c) =>
-          c.synchronise ? c : { ...c, synchronise: true },
+          c.id === action.id ? { ...c, synchronise: true } : c,
         ),
       }
 
@@ -861,7 +861,7 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
     }
   }, [etat, pret, restaurantId])
 
-  // Synchronisation des nouvelles commandes (API + Broadcast local)
+  // Synchronisation des nouvelles commandes (Broadcast local immédiat)
   const previousCommandesRef = useRef<Commande[]>(etatInitial().commandes)
   useEffect(() => {
     if (!pret) return
@@ -874,15 +874,6 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
     added.forEach((cmd) => {
       // Si la commande a été créée localement par CE client
       if (cmd.id.startsWith('local-')) {
-        // Envoi au backend (Supabase)
-        fetch('/api/caisse/commandes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cmd),
-        }).catch(() => {
-          // Géré hors-ligne plus tard
-        })
-
         // Broadcast local pour les autres onglets
         if (typeof window !== 'undefined') {
           const channel = new BroadcastChannel('alba-sync')
@@ -922,24 +913,71 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
     [],
   )
 
-  // Au retour du réseau, les tickets gardés en local partent tout seuls.
+  // Boucle de persistance offline-first robuste
+  // Tente continuellement d'envoyer les tickets en attente.
   useEffect(() => {
-    const online = () => {
-      if (etat.enAttente.length > 0) {
-        const n = etat.enAttente.length
-        window.setTimeout(() => {
-          envoyer({ type: 'synchroniser' })
-          notifier({
-            ton: 'succes',
-            titre: `${n} ticket${n > 1 ? 's' : ''} synchronisé${n > 1 ? 's' : ''}`,
-            detail: 'Tout est remonté au cloud, rien n’a été perdu.',
+    if (!pret || etat.enAttente.length === 0) return
+
+    let timeout: number
+    let isCancelled = false
+
+    const syncPending = async () => {
+      const pendingIds = [...etat.enAttente]
+      let successCount = 0
+
+      for (const id of pendingIds) {
+        if (isCancelled) break
+        const cmd = etat.commandes.find((c) => c.id === id)
+        if (!cmd) continue
+
+        try {
+          const res = await fetch('/api/caisse/commandes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cmd),
           })
-        }, 1600)
+          if (res.ok) {
+            envoyer({ type: 'commandeSynchronisee', id })
+            successCount++
+          } else {
+            // Serveur répond mais erreur (500, etc), on arrête pour l'instant
+            break
+          }
+        } catch {
+          // Échec (hors ligne ou timeout), on arrête pour ce cycle
+          break
+        }
+      }
+
+      if (successCount > 0 && !isCancelled) {
+        notifier({
+          ton: 'succes',
+          titre: `${successCount} ticket${successCount > 1 ? 's' : ''} synchronisé${successCount > 1 ? 's' : ''}`,
+          detail: 'Sauvegardé sur le cloud sans perte.',
+        })
+      }
+      
+      // S'il en reste et pas annulé, on réessaye dans 10 secondes
+      if (!isCancelled && etat.enAttente.length > successCount) {
+        timeout = window.setTimeout(syncPending, 10000)
       }
     }
+
+    // Essai immédiat avec un léger délai pour éviter les requêtes groupées inutiles
+    timeout = window.setTimeout(syncPending, 1500)
+
+    const online = () => {
+      clearTimeout(timeout)
+      syncPending()
+    }
     window.addEventListener('online', online)
-    return () => window.removeEventListener('online', online)
-  }, [etat.enAttente.length, notifier])
+
+    return () => {
+      isCancelled = true
+      clearTimeout(timeout)
+      window.removeEventListener('online', online)
+    }
+  }, [etat.enAttente, etat.commandes, envoyer, notifier, pret])
 
   const total = useMemo(
     () => etat.panier.reduce((s, l) => s + l.prix * l.qte, 0),
