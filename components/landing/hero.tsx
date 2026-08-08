@@ -22,6 +22,7 @@ import {
 import { destinationPour } from '@/lib/auth'
 import { useAuth } from '@/lib/auth-contexte'
 import { sfx } from '@/lib/sounds'
+import confetti from 'canvas-confetti'
 
 const BARS = [34, 48, 42, 62, 55, 74, 92]
 
@@ -227,8 +228,16 @@ export function Hero() {
             <Link
               href={destinationPour(utilisateur.role, utilisateur.permissions)}
               onMouseEnter={() => sfx?.playHover()}
-              onClick={() => sfx?.playClick()}
-              className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] animate-glow-pulse transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.02] hover:bg-primary/90 active:scale-[0.98] sm:w-auto"
+              onClick={(e) => {
+                sfx?.playClick()
+                confetti({
+                  particleCount: 150,
+                  spread: 70,
+                  origin: { y: 0.6 },
+                  colors: ['#ef4444', '#f97316', '#22c55e'] // Primary, Warning, Success
+                })
+              }}
+              className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] animate-glow-pulse transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.05] hover:bg-primary/90 active:scale-[0.95] sm:w-auto"
             >
               <LayoutGridIcon className="size-4" />
               Ouvrir mon espace
@@ -239,8 +248,16 @@ export function Hero() {
               <Link
                 href="/register?mode=restaurant"
                 onMouseEnter={() => sfx?.playHover()}
-                onClick={() => sfx?.playClick()}
-                className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] animate-glow-pulse transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.02] hover:bg-primary/90 active:scale-[0.98] sm:w-auto"
+                onClick={(e) => {
+                  sfx?.playClick()
+                  confetti({
+                    particleCount: 150,
+                    spread: 70,
+                    origin: { y: 0.6 },
+                    colors: ['#ef4444', '#f97316', '#22c55e']
+                  })
+                }}
+                className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] animate-glow-pulse transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.05] hover:bg-primary/90 active:scale-[0.95] sm:w-auto"
               >
                 Commencer
                 <ArrowRightIcon className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />

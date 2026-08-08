@@ -4,6 +4,8 @@ import { useMemo, useState, useEffect } from 'react'
 import { PrinterIcon, ShareIcon, SparklesIcon, DownloadIcon } from 'lucide-react'
 import { RESTAURANT, fcfa, type Reglement } from '@/lib/data'
 import { useAlba } from '@/lib/store'
+import { sfx } from '@/lib/sounds'
+import confetti from 'canvas-confetti'
 import { TicketThermique } from './ticket-thermique'
 
 /**
@@ -31,6 +33,32 @@ export function Recu({
   useEffect(() => {
     setIsClient(true)
   }, [])
+
+  useEffect(() => {
+    if (objectifAtteint) {
+      const duree = 3 * 1000
+      const fin = Date.now() + duree
+      
+      // SFX Victoire!
+      sfx?.playClick()
+
+      const interval = setInterval(() => {
+        if (Date.now() > fin) return clearInterval(interval)
+        confetti({
+          particleCount: 50,
+          startVelocity: 30,
+          spread: 360,
+          origin: {
+            x: Math.random(),
+            y: Math.random() - 0.2
+          },
+          colors: ['#eab308', '#facc15', '#fbbf24'] // Or / Jaune
+        })
+      }, 250)
+
+      return () => clearInterval(interval)
+    }
+  }, [objectifAtteint])
 
   const texteRecu = useMemo(() => {
     const lignes = [
