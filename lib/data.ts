@@ -1,5 +1,19 @@
 // Données de démonstration en mémoire — remplaçables par une vraie base plus tard.
 
+/**
+ * Comptes de démonstration (seed, duplications `r1`/`r2`/`r3`) : eux seuls
+ * gardent le dataset d'exemple à la première ouverture. Tout restaurant
+ * réel (ou le compte de test `r4`) démarre VIERGE : le gérant crée son
+ * menu, son stock, son équipe — aucune trace de démo dans ses chiffres.
+ */
+const RESTAURANTS_DEMO = new Set(['r1', 'r2', 'r3'])
+
+export function restaurantEstDemo(restaurantId: string | null | undefined) {
+  return restaurantId !== null && restaurantId !== undefined
+    ? RESTAURANTS_DEMO.has(restaurantId)
+    : false
+}
+
 export const RESTAURANT = {
   nom: 'Chez Fatou',
   quartier: 'Ngor, Dakar',

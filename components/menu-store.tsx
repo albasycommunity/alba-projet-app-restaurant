@@ -17,6 +17,7 @@ import {
 import {
   CATEGORIES,
   MENU,
+  restaurantEstDemo,
   type Categorie,
   type Plat,
 } from '@/lib/data'
@@ -31,9 +32,9 @@ export type PlatEditable = Plat & {
   cree: boolean
 }
 
-const CLE_BASE = 'alba:menu:v2'
+const CLE_BASE = 'alba:menu:v3'
 /** Ancienne clé partagée entre tous les comptes — purgée une seule fois. */
-const CLE_LEGACY = 'alba:menu:v1'
+const CLE_LEGACY = 'alba:menu:v2'
 const clePour = (restaurantId: string) => `${CLE_BASE}:${restaurantId}`
 
 type Contexte = {
@@ -52,8 +53,10 @@ type Contexte = {
 
 const Contexte = createContext<Contexte | null>(null)
 
-function initial(): PlatEditable[] {
-  return MENU.map((p) => ({ ...p, actif: true, rupture: false, cree: false }))
+function initial(demo: boolean): PlatEditable[] {
+  // Les comptes de démonstration gardent le menu d'exemple ; les comptes
+  // réels partent d'une carte VIERGE (onboarding : créer son premier plat).
+  return demo ? MENU.map((p) => ({ ...p, actif: true, rupture: false, cree: false })) : []
 }
 
 export function MenuProvider({ children }: { children: React.ReactNode }) {
@@ -70,9 +73,10 @@ export function MenuProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!restaurantId) {
       setProprietaire(null)
-      setPlats(initial())
+      setPlats(initial(false))
       return
     }
+    const demo = restaurantEstDemo(restaurantId)
     let platsValides: PlatEditable[] | null = null
     try {
       const brut = window.localStorage.getItem(clePour(restaurantId))
@@ -102,7 +106,7 @@ export function MenuProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // illisible : on repart sur le menu de démonstration
     }
-    setPlats(platsValides ?? initial())
+    setPlats(platsValides ?? initial(demo))
     setProprietaire(restaurantId)
   }, [restaurantId])
 

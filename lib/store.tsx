@@ -22,6 +22,7 @@ import {
   commandesInitiales,
   niveauPour,
   pointsPour,
+  restaurantEstDemo,
   type ClientFidele,
   type Commande,
   type Employe,
@@ -167,32 +168,36 @@ type Action =
  * AUSSI scopée par restaurant : deux comptes sur le même navigateur ne
  * partagent jamais leur poste de travail (isolation des données).
  */
-const CLE_BASE = 'alba:poste:v4'
+const CLE_BASE = 'alba:poste:v5'
 /** Ancienne clé partagée entre tous les comptes — purgée une seule fois. */
-const CLE_LEGACY = 'alba:poste:v3'
+const CLE_LEGACY = 'alba:poste:v4'
 const clePour = (restaurantId: string) => `${CLE_BASE}:${restaurantId}`
 
-function etatInitial(): Etat {
+function etatInitial(demo = false): Etat {
   return {
     proprietaire: null,
-    commandes: commandesInitiales(),
-    stock: STOCK.map((i) => ({ ...i })),
-    haccp: HACCP.map((t) => ({ ...t })),
-    equipe: EQUIPE.map((e) => ({ ...e, modules: [...e.modules] })),
-    clients: CLIENTS.map((c) => ({ ...c })),
-    pointages: EQUIPE.filter((e) => e.arrivee).map((e) => ({
-      id: `pt-${e.id}`,
-      employeId: e.id,
-      nom: e.nom,
-      type: 'arrivee' as const,
-      heure: e.arrivee!,
-    })),
+    // Données d'exemple uniquement pour les comptes de démo — les comptes
+    // réels partent d'un poste VIERGE (le gérant crée tout lui-même).
+    commandes: demo ? commandesInitiales() : [],
+    stock: demo ? STOCK.map((i) => ({ ...i })) : [],
+    haccp: demo ? HACCP.map((t) => ({ ...t })) : [],
+    equipe: demo ? EQUIPE.map((e) => ({ ...e, modules: [...e.modules] })) : [],
+    clients: demo ? CLIENTS.map((c) => ({ ...c })) : [],
+    pointages: demo
+      ? EQUIPE.filter((e) => e.arrivee).map((e) => ({
+          id: `pt-${e.id}`,
+          employeId: e.id,
+          nom: e.nom,
+          type: 'arrivee' as const,
+          heure: e.arrivee!,
+        }))
+      : [],
     echanges: [],
     pertes: [],
     receptions: [],
     panier: [],
     destination: { canal: 'salle' },
-    prochainNumero: 253,
+    prochainNumero: demo ? 253 : 1,
     enAttente: [],
     suppressions: [],
     externes: [],
@@ -278,13 +283,16 @@ function reducer(etat: Etat, action: Action): Etat {
   switch (action.type) {
     case 'hydrater':
       return {
-        ...etatInitial(),
+        ...etatInitial(restaurantEstDemo(action.proprietaire)),
         ...action.etat,
         proprietaire: action.proprietaire ?? null,
       }
 
     case 'reinitialiser':
-      return { ...etatInitial(), proprietaire: action.proprietaire ?? null }
+      return {
+        ...etatInitial(restaurantEstDemo(action.proprietaire)),
+        proprietaire: action.proprietaire ?? null,
+      }
 
     case 'ajouter': {
       const platBase = action.plat ?? MENU.find((p) => p.id === action.platId)
@@ -863,7 +871,7 @@ const AlbaContexte = createContext<Contexte | null>(null)
 export function AlbaProvider({ children }: { children: React.ReactNode }) {
   const { utilisateur } = useAuth()
   const restaurantId = utilisateur?.restaurantId ?? null
-  const [etat, dispatch] = useReducer(reducer, null, etatInitial)
+  const [etat, dispatch] = useReducer(reducer, null, () => etatInitial(false))
   const [notifs, setNotifs] = useState<Notif[]>([])
   const [pret, setPret] = useState(false)
 
