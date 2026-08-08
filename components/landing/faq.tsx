@@ -26,28 +26,28 @@ function textePrix() {
 
 const FAQ: { q: string; r: string | (() => string) }[] = [
   {
+    q: "Est-ce qu'un logiciel ne va pas compliquer les choses ?",
+    r: "C'est l'inverse : Alba simplifie la gestion. En quelques heures, votre équipe sera plus rapide. Vous n'aurez plus à chercher des tickets perdus ou à recalculer les stocks le soir.",
+  },
+  {
     q: 'Est-ce que ça marche vraiment sans connexion ?',
-    r: "Oui. Alba écrit d'abord en local : encaisser, servir, ajuster le stock — rien de vital ne dépend du réseau. Dès que la connexion revient, tout se synchronise automatiquement. C'est le principe offline-first, pensé pour les coupures comme pour les zones mal couvertes.",
+    r: "Oui. Alba écrit d'abord en local : encaisser, servir, ajuster le stock — rien de vital ne dépend du réseau. Dès que la connexion revient, tout se synchronise automatiquement. Idéal pour les coupures de courant ou de wifi.",
   },
   {
     q: 'Combien ça coûte ?',
     r: textePrix,
   },
   {
-    q: 'Pour quel type de restaurant ?',
-    r: "Terrasse, salon de thé, cantine, restaurant gastronomique : Alba s'adapte à la taille de l'équipe et du service. Un téléphone ou une tablette suffisent pour commencer.",
-  },
-  {
-    q: 'Mes données sont-elles protégées ?',
-    r: "Chaque mot de passe est haché, les sessions sont limitées à 24 h et les permissions sont vérifiées au serveur à chaque requête — jamais seulement dans l'interface. Chaque restaurant n'accède qu'à ses propres données.",
+    q: "Mon restaurant est petit, en ai-je vraiment besoin ?",
+    r: "Même avec 5 tables, les erreurs de caisse et les pertes de stock coûtent très cher. Alba vous aide à protéger vos marges et à arrêter de perdre de l'argent dès le premier jour.",
   },
   {
     q: "Puis-je essayer avant de m'abonner ?",
-    r: `Oui — chaque restaurant démarre en mode découverte : le back-office est entièrement ouvert dès le premier jour, sans paiement ni carte bancaire. Tu explores Alba avec tes vraies données, puis tu passes au plan payant quand tu es prêt ; le compte client, lui, reste gratuit.`,
+    r: `Oui — le back-office est entièrement ouvert en mode découverte, gratuitement et sans carte bancaire. Vous explorez avec vos propres données, et passez au plan payant seulement quand vous voyez les premiers résultats.`,
   },
   {
-    q: 'Faut-il un matériel spécifique ?',
-    r: "Non. Un smartphone Android ou un iPhone suffisent pour la salle et la cuisine ; un ordinateur est un plus pour le pilotage. Tout est conçu pour le tactile, une main, en pleine rush.",
+    q: 'Faut-il acheter du matériel spécial ?',
+    r: "Non. Vos serveurs et cuisiniers peuvent utiliser leurs propres smartphones (Android ou iPhone). L'application est pensée pour être utilisée à une main, même en plein rush.",
   },
 ]
 

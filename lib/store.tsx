@@ -79,6 +79,14 @@ export type Echange = {
   heure: string
 }
 
+/** Un ticket de caisse annulé avec le PIN de sécurité. */
+export type Annulation = {
+  id: string
+  commandeRef: string
+  montant: number
+  heure: string
+}
+
 export type Etat = {
   /** Restaurant à qui appartient cet état local — la sauvegarde d'un autre
    *  compte ne doit jamais être servie ni réécrite ici (isolation entre
@@ -111,9 +119,13 @@ export type Etat = {
   decaissements: Decaissement[]
   /** décaissements locaux pas encore poussés au cloud */
   decaissementsEnAttente: string[]
+  /** Registre immuable des tickets annulés pour éviter les fraudes */
+  annulations: Annulation[]
   /** CA de base déjà réalisé avant l'ouverture de la session */
   caBase: number
   ticketsBase: number
+  /** Objectif de chiffre d'affaires journalier (configurable) */
+  objectifJour: number
 }
 
 type Action =
@@ -132,7 +144,7 @@ type Action =
   | { type: 'encaisser'; reglements: Reglement[]; ref: string }
   | { type: 'avancer'; id: string }
   | { type: 'reculer'; id: string }
-  | { type: 'annulerCommande'; id: string }
+  | { type: 'annulerCommande'; commande: Commande }
   | { type: 'ajouterDecaissement'; montant: number; motif: string; parId?: string }
   | { type: 'decaissementSynchronise'; id: string }
   | { type: 'recevoirDecaissementsCloud'; decaissements: Decaissement[] }
@@ -161,6 +173,7 @@ type Action =
   | { type: 'recevoirCommandesCloud'; commandes: Commande[] }
   | { type: 'hydrater'; etat: Etat; proprietaire?: string }
   | { type: 'reinitialiser'; proprietaire?: string }
+  | { type: 'definirObjectifJour'; montant: number }
 
 /**
  * La version fait partie de la clé : quand la forme des données change,
@@ -203,10 +216,12 @@ function etatInitial(demo = false): Etat {
     externes: [],
     decaissements: [],
     decaissementsEnAttente: [],
+    annulations: [],
     // Plus de socle de démonstration : les indicateurs comptent
     // uniquement les encaissements réels de la session.
     caBase: 0,
     ticketsBase: 0,
+    objectifJour: OBJECTIF_JOUR,
   }
 }
 
@@ -293,6 +308,9 @@ function reducer(etat: Etat, action: Action): Etat {
         ...etatInitial(restaurantEstDemo(action.proprietaire)),
         proprietaire: action.proprietaire ?? null,
       }
+
+    case 'definirObjectifJour':
+      return { ...etat, objectifJour: action.montant }
 
     case 'ajouter': {
       const platBase = action.plat ?? MENU.find((p) => p.id === action.platId)
@@ -455,18 +473,30 @@ function reducer(etat: Etat, action: Action): Etat {
       }
     }
 
-    case 'annulerCommande':
+    case 'annulerCommande': {
+      const montant = action.commande.reglements.reduce((s, r) => s + r.montant, 0)
+      const annulation: Annulation = {
+        id: `annul-${Date.now()}`,
+        commandeRef: action.commande.ref,
+        montant,
+        heure: new Date().toLocaleTimeString('fr-FR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      }
       return {
         ...etat,
-        commandes: etat.commandes.filter((c) => c.id !== action.id),
+        commandes: etat.commandes.filter((c) => c.id !== action.commande.id),
+        annulations: [annulation, ...etat.annulations],
         // L'annulation (PIN) doit aussi retirer le ticket du cloud, sinon
         // les autres postes continueraient de le compter dans le CA.
-        suppressions: etat.suppressions.includes(action.id)
+        suppressions: etat.suppressions.includes(action.commande.id)
           ? etat.suppressions
-          : [...etat.suppressions, action.id],
-        enAttente: etat.enAttente.filter((id) => id !== action.id),
-        externes: etat.externes.filter((id) => id !== action.id),
+          : [...etat.suppressions, action.commande.id],
+        enAttente: etat.enAttente.filter((id) => id !== action.commande.id),
+        externes: etat.externes.filter((id) => id !== action.commande.id),
       }
+    }
 
     case 'recevoirCommandesCloud': {
       // Fusion par id : on ignore ce qu'on connaît déjà (nos propres
@@ -1014,6 +1044,28 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
     [],
   )
 
+  // IC-02 : Lecture des décaissements cloud au démarrage du poste.
+  // La route GET /api/caisse/decaissements et l'action recevoirDecaissementsCloud
+  // existaient déjà — il manquait uniquement le déclencheur au démarrage.
+  // Offline-first : un échec réseau est silencieux, l'état local reste intact.
+  useEffect(() => {
+    if (!pret || !restaurantId) return
+    fetch('/api/caisse/decaissements')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.decaissements?.length > 0) {
+          dispatch({
+            type: 'recevoirDecaissementsCloud',
+            decaissements: data.decaissements,
+          })
+        }
+      })
+      .catch(() => {
+        // Hors ligne ou erreur serveur : on continue sur l'état local
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pret, restaurantId])
+
   // Boucle de persistance offline-first robuste
   // Tente continuellement d'envoyer les tickets en attente (POST) et de
   // faire remonter les annulations (DELETE) : le cloud finit par
@@ -1371,7 +1423,7 @@ export function AlbaProvider({ children }: { children: React.ReactNode }) {
       tickets,
       ticketsPoste,
       panierMoyen: Math.round(caJour / Math.max(1, tickets)),
-      partObjectif: Math.min(100, Math.round((caJour / OBJECTIF_JOUR) * 100)),
+      partObjectif: Math.min(100, Math.round((caJour / Math.max(1, etat.objectifJour)) * 100)),
       parMode,
       affluence,
       ventesParPlat,

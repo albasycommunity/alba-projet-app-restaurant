@@ -249,9 +249,9 @@ export const PLANS_ABONNEMENT: Record<
   },
   pro: {
     libelle: 'Pro',
-    detail: 'Le plan de référence : équipe illimitée, tous les modules.',
+    detail: 'Le plan de référence : jusqu\'à 15 membres d\'équipe, tous les modules.',
     verrous: {
-      limiteStaff: null,
+      limiteStaff: 15,
       modulesAutorises: [...TOUTES_LES_PERMISSIONS],
       multiEtablissements: false,
     },
@@ -446,6 +446,7 @@ export const ETAPES_ONBOARDING = [
   'profil',
   'plat',
   'vente',
+  'stock',
   'equipe',
   'stats',
 ] as const

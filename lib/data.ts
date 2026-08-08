@@ -20,9 +20,6 @@ export const RESTAURANT = {
   gerante: 'Fatou Ndiaye',
 }
 
-/** Code secret manager pour annuler un ticket (Anti-vol) */
-export const PIN_MANAGER = '1234'
-
 export type Categorie = 'Plats' | 'Grillades' | 'Boissons' | 'Desserts'
 
 /** Une ligne de recette : quelle quantité d'un ingrédient part à chaque plat vendu. */

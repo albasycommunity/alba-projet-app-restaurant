@@ -18,6 +18,7 @@ import {
   ChartPieIcon,
   ChefHatIcon,
   CheckIcon,
+  PackageSearchIcon,
   PartyPopperIcon,
   ReceiptTextIcon,
   SparklesIcon,
@@ -52,6 +53,7 @@ const ICONES: Record<EtapeOnboarding, typeof StoreIcon> = {
   profil: StoreIcon,
   plat: ChefHatIcon,
   vente: ReceiptTextIcon,
+  stock: PackageSearchIcon,
   equipe: UsersIcon,
   stats: ChartPieIcon,
 }
@@ -67,6 +69,7 @@ const CIBLES: Record<EtapeOnboarding, string> = {
   profil: '',
   plat: '#gestion-menu',
   vente: '/caisse',
+  stock: '/stock',
   equipe: '#personnel',
   stats: '/pilotage',
 }
@@ -75,6 +78,7 @@ const LIBELLES: Record<EtapeOnboarding, string> = {
   profil: 'Ta fiche restaurant',
   plat: 'Ton premier plat',
   vente: 'Ta première vente',
+  stock: 'Ton premier ingrédient',
   equipe: 'Un membre dans l’équipe',
   stats: 'Tes chiffres du jour',
 }
@@ -83,6 +87,7 @@ const DETAILS: Record<EtapeOnboarding, string> = {
   profil: 'Nom et quartier renseignés, pour que ta vitrine te ressemble.',
   plat: 'Ajoute un plat à ta carte — il apparaît immédiatement sur la carte client.',
   vente: 'Encaisser un ticket, c’est la vraie mécanique Alba.',
+  stock: 'Ajoute au moins un ingrédient — l’app peut alors te dire ce qui va manquer.',
   equipe: 'Crée un compte pour ta caissière ou ton cuisinier, avec les zones qu’il doit voir.',
   stats: 'CA, tickets, marges : jette un œil au pilotage.',
 }
@@ -102,11 +107,14 @@ export function useProgressionOnboarding(): ProgressionOnboarding | null {
   const admin = utilisateur?.role === Role.RESTAURANT_ADMIN
   const platCree = plats.some((p) => p.cree)
   const venteEncaisee = etat.commandes.some((c) => c.id.startsWith('local-'))
+  // IC-05 : le stock est considéré configuré dès qu'au moins un ingrédient
+  // a été ajouté dans la session locale (état non vide).
+  const stockConfigure = etat.stock.length > 0
 
   useEffect(() => {
     if (!admin) return
     let annule = false
-    const url = `/api/back-office/onboarding?platCree=${platCree ? '1' : '0'}&venteEncaisee=${venteEncaisee ? '1' : '0'}`
+    const url = `/api/back-office/onboarding?platCree=${platCree ? '1' : '0'}&venteEncaisee=${venteEncaisee ? '1' : '0'}&stockConfigure=${stockConfigure ? '1' : '0'}`
     const charger = () =>
       fetch(url, { cache: 'no-store' })
         .then((r) => (r.ok ? (r.json() as Promise<ProgressionOnboarding>) : null))
@@ -123,7 +131,7 @@ export function useProgressionOnboarding(): ProgressionOnboarding | null {
       annule = true
       window.removeEventListener(EVENEMENT_ONBOARDING_RAFRAICHIR, surSignal)
     }
-  }, [admin, platCree, venteEncaisee])
+  }, [admin, platCree, venteEncaisee, stockConfigure])
 
   return progression
 }

@@ -5,21 +5,21 @@ import { QuoteIcon, StarIcon } from 'lucide-react'
 const TEMOIGNAGES = [
   {
     citation:
-      "On a encaissé tout le service du soir sans réseau. Le lendemain matin, tout était synchronisé. Aucun ticket perdu, aucun calcul refait.",
+      "Avant, je perdais de l'argent chaque mois sans comprendre où. Depuis Alba, ma caisse est toujours juste et mon stock correspond enfin aux ventes.",
     nom: 'Awa S.',
     role: 'Gérante de restaurant — Dakar',
     teinte: 'from-primary/25 to-primary/5',
   },
   {
     citation:
-      "Le stock ne me surprend plus. L'app me dit ce qui va manquer avant que ça manque, et le réappro est déjà chiffré.",
+      "Les vols en cuisine ont complètement disparu. L'application calcule ce qu'il doit rester dans le frigo, c'est devenu impossible de tricher.",
     nom: 'Moussa D.',
-    role: 'Responsable de cuisine — Thiès',
+    role: 'Propriétaire — Thiès',
     teinte: 'from-success/20 to-success/5',
   },
   {
     citation:
-      "La Carte de Fidélité tourne toute seule. Mes clients reviennent, et je n'ai plus un cahier pour compter les points.",
+      "Même pendant nos pannes de wifi, le service continue et personne ne panique. Mes marges ont augmenté de 15% le premier mois.",
     nom: 'Ndeye C.',
     role: 'Restauratrice — Rufisque',
     teinte: 'from-warning/20 to-warning/5',
@@ -33,10 +33,10 @@ export function Temoignages() {
       <div className="relative mx-auto max-w-5xl px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-[11px] font-medium tracking-[0.22em] text-primary uppercase">
-            Témoignages
+            Résultats prouvés
           </p>
           <h2 className="font-display mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            La parole est au terrain
+            Ils ont arrêté de perdre de l'argent
           </h2>
         </div>
 

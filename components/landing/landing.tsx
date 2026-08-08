@@ -9,6 +9,8 @@ import { LogoComplet } from './logo'
 import { Hero, BandeServices } from './hero'
 import { Fonctionnalites, ParRoles } from './features'
 import { Plans } from './plans'
+import { CalculateurROI } from './roi-calculator'
+import { CommentCaMarche } from './how-it-works'
 import { Temoignages } from './testimonials'
 import { FoireAuxQuestions } from './faq'
 import { BandeCta } from './cta'
@@ -16,6 +18,7 @@ import { PiedDePage } from './footer'
 
 const LIENS = [
   { l: 'Fonctionnalités', h: '#fonctionnalites' },
+  { l: 'Simulateur ROI', h: '#calculateur-roi' },
   { l: 'Plans', h: '#plans' },
   { l: 'FAQ', h: '#faq' },
 ]
@@ -170,7 +173,9 @@ export function Landing() {
         <Hero />
         <BandeServices />
         <Fonctionnalites />
+        <CalculateurROI />
         <ParRoles />
+        <CommentCaMarche />
         <Plans />
         <Temoignages />
         <FoireAuxQuestions />

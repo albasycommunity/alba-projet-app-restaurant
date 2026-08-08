@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import { PrinterIcon, ShareIcon, SparklesIcon, DownloadIcon } from 'lucide-react'
-import { OBJECTIF_JOUR, RESTAURANT, fcfa, type Reglement } from '@/lib/data'
+import { RESTAURANT, fcfa, type Reglement } from '@/lib/data'
 import { useAlba } from '@/lib/store'
 import { TicketThermique } from './ticket-thermique'
 
@@ -24,8 +24,8 @@ export function Recu({
   lignes: any[]
   onTerminer: () => void
 }) {
-  const { indicateurs } = useAlba()
-  const objectifAtteint = indicateurs.caJour >= OBJECTIF_JOUR
+  const { indicateurs, etat } = useAlba()
+  const objectifAtteint = indicateurs.caJour >= etat.objectifJour
   const [isClient, setIsClient] = useState(false)
 
   useEffect(() => {

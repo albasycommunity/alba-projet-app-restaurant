@@ -29,11 +29,10 @@ import { CountUp } from '@/components/count-up'
 import { useAlba, vibrer } from '@/lib/store'
 import { useAuth } from '@/lib/auth-contexte'
 import {
-  MENU,
-  OBJECTIF_JOUR,
   fcfa,
   fcfaCourt,
 } from '@/lib/data'
+import { useMenu } from '@/components/menu-store'
 
 /** Rapport de fin de service, prêt à coller dans WhatsApp. */
 function redigerRapport(nomRestaurant: string, d: {
@@ -49,12 +48,13 @@ function redigerRapport(nomRestaurant: string, d: {
   alertes: string[]
   coutRH: number
   ratioRH: number
+  objectifJour: number
 }) {
   const lignes = [
     `${nomRestaurant} — rapport du jour`,
     '',
     `Chiffre d'affaires : ${fcfa(d.caJour)}`,
-    `Objectif : ${d.partObjectif} % de ${fcfa(OBJECTIF_JOUR)}`,
+    `Objectif : ${d.partObjectif} % de ${fcfa(d.objectifJour)}`,
     `Tickets : ${d.tickets} · panier moyen ${fcfa(d.panierMoyen)}`,
     `Marge brute : ${fcfa(d.margeJour)} · food cost ${d.foodCostJour} %`,
     `Masse salariale : ${fcfa(d.coutRH)} (${d.ratioRH} % du CA)`,
@@ -73,22 +73,31 @@ function redigerRapport(nomRestaurant: string, d: {
 }
 
 export function PilotageClient() {
-  const { indicateurs, etat, notifier } = useAlba()
+  const { indicateurs, etat, notifier, envoyer } = useAlba()
   const { utilisateur, restaurantNom } = useAuth()
   const [rapportOuvert, setRapportOuvert] = useState(false)
   const [copie, setCopie] = useState(false)
+  const [editObjectif, setEditObjectif] = useState(false)
+  const [nouvelObjectif, setNouvelObjectif] = useState(etat.objectifJour)
 
   const prenom = utilisateur?.nom?.split(' ')[0] ?? 'à bord'
 
+  // Vrais plats du restaurant (via useMenu) — fini le MENU de démo.
+  // Pour un compte démo, useMenu retourne aussi le vrai menu chargé.
+  const { plats } = useMenu()
+
   const topPlats = useMemo(
     () =>
-      MENU.map((p) => ({
-        ...p,
-        vendus: indicateurs.ventesParPlat.get(p.id) ?? 0,
-      }))
+      plats
+        .map((p) => ({
+          ...p,
+          vendus: indicateurs.ventesParPlat.get(p.id) ?? 0,
+        }))
+        .filter((p) => p.vendus > 0 || plats.length === 0)
         .sort((a, b) => b.vendus - a.vendus)
         .slice(0, 5),
-    [indicateurs.ventesParPlat],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [indicateurs.ventesParPlat, plats],
   )
 
   const maxAffluence = Math.max(1, ...indicateurs.affluence.map((a) => a.ca))
@@ -122,8 +131,9 @@ export function PilotageClient() {
         alertes,
         coutRH: indicateurs.coutRH,
         ratioRH: indicateurs.ratioRH,
+        objectifJour: etat.objectifJour
       }),
-    [indicateurs, topPlats, alertes, restaurantNom],
+    [indicateurs, topPlats, alertes, restaurantNom, etat.objectifJour],
   )
 
   const envoyerWhatsApp = () => {
@@ -133,6 +143,12 @@ export function PilotageClient() {
       '_blank',
       'noopener,noreferrer',
     )
+  }
+
+  const validerObjectif = (e: React.FormEvent) => {
+    e.preventDefault()
+    envoyer({ type: 'definirObjectifJour', montant: nouvelObjectif })
+    setEditObjectif(false)
   }
 
   const copier = async () => {
@@ -149,7 +165,7 @@ export function PilotageClient() {
     }
   }
 
-  const restePourObjectif = Math.max(0, OBJECTIF_JOUR - indicateurs.caJour)
+  const restePourObjectif = Math.max(0, etat.objectifJour - indicateurs.caJour)
   const ticketsLocaux = indicateurs.ticketsPoste
 
   // Aucun encaissement réel encore : on ne montre pas de zéros trompeurs,
@@ -241,10 +257,27 @@ export function PilotageClient() {
             </div>
 
             <div className="flex flex-col items-end gap-2">
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <TargetIcon className="size-3.5" />
-                Objectif {fcfa(OBJECTIF_JOUR)}
-              </span>
+              {editObjectif ? (
+                <form onSubmit={validerObjectif} className="flex items-center gap-2 mb-1">
+                  <input
+                    type="number"
+                    autoFocus
+                    value={nouvelObjectif}
+                    onChange={(e) => setNouvelObjectif(Number(e.target.value))}
+                    className="w-24 rounded bg-background px-2 py-1 text-xs tnum border border-border"
+                  />
+                  <button type="submit" className="text-xs text-primary font-medium hover:underline">OK</button>
+                </form>
+              ) : (
+                <button 
+                  onClick={() => setEditObjectif(true)}
+                  className="group flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <TargetIcon className="size-3.5" />
+                  Objectif {fcfa(etat.objectifJour)}
+                  <span className="opacity-0 group-hover:opacity-100 text-[10px] underline ml-1">Modifier</span>
+                </button>
+              )}
               <div className="h-2 w-40 overflow-hidden rounded-full bg-secondary">
                 <div
                   className="h-full rounded-full bg-primary transition-[width] duration-1000 ease-[var(--ease-organic)]"
@@ -407,30 +440,39 @@ export function PilotageClient() {
             Plats les plus vendus
           </CardTitle>
           <ul className="flex flex-col divide-y divide-border">
-            {topPlats.map((p) => {
-              const marge = 100 - p.foodCost
-              return (
-                <li
-                  key={p.id}
-                  className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary font-display text-xs font-semibold tnum">
-                    {p.vendus}
-                  </span>
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm font-medium">{p.nom}</span>
-                    <span className="text-xs text-muted-foreground tnum">
-                      {fcfa(p.prix)} · {fcfa(p.prix * p.vendus)} générés
-                    </span>
-                  </div>
-                  <Badge
-                    ton={marge >= 65 ? 'succes' : marge >= 58 ? 'attention' : 'alerte'}
+            {topPlats.length === 0 ? (
+              <li className="py-6 text-center text-sm text-muted-foreground">
+                Aucune vente enregistrée aujourd'hui.{' '}
+                <Link href="/caisse" className="text-primary hover:underline">
+                  Aller à la caisse →
+                </Link>
+              </li>
+            ) : (
+              topPlats.map((p) => {
+                const marge = 100 - p.foodCost
+                return (
+                  <li
+                    key={p.id}
+                    className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
                   >
-                    marge {marge} %
-                  </Badge>
-                </li>
-              )
-            })}
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary font-display text-xs font-semibold tnum">
+                      {p.vendus}
+                    </span>
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm font-medium">{p.nom}</span>
+                      <span className="text-xs text-muted-foreground tnum">
+                        {fcfa(p.prix)} · {fcfa(p.prix * p.vendus)} générés
+                      </span>
+                    </div>
+                    <Badge
+                      ton={marge >= 65 ? 'succes' : marge >= 58 ? 'attention' : 'alerte'}
+                    >
+                      marge {marge} %
+                    </Badge>
+                  </li>
+                )
+              })
+            )}
           </ul>
         </Card>
 

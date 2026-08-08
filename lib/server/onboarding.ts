@@ -22,6 +22,7 @@ const AUCUNE_PROGRESSION: ProgressionOnboarding = {
     profil: false,
     plat: false,
     vente: false,
+    stock: false,
     equipe: false,
     stats: false,
   },
@@ -47,7 +48,7 @@ const AUCUNE_PROGRESSION: ProgressionOnboarding = {
  */
 export async function progressionOnboarding(
   restaurantId: string,
-  contributions?: { platCree?: boolean; venteEncaisee?: boolean },
+  contributions?: { platCree?: boolean; venteEncaisee?: boolean; stockConfigure?: boolean },
 ): Promise<ProgressionOnboarding> {
   const bdd = await lireBdd()
 
@@ -67,6 +68,11 @@ export async function progressionOnboarding(
     contributions?.venteEncaisee === true ||
     bdd.commandesClients.some((c) => c.restaurantId === restaurantId)
 
+  // IC-05 : étape stock — le gérant a ajouté au moins un ingrédient à son
+  // stock. Sans cette étape, les alertes de sous-seuil ne se déclenchaient
+  // jamais sur un compte réel (stock vide par défaut).
+  const stock = contributions?.stockConfigure === true
+
   const equipe = bdd.utilisateurs.some(
     (u) =>
       u.role === Role.STAFF &&
@@ -80,6 +86,7 @@ export async function progressionOnboarding(
     profil,
     plat,
     vente,
+    stock,
     equipe,
     stats,
   }

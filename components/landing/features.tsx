@@ -3,50 +3,50 @@
 import Link from 'next/link'
 import {
   ArrowRightIcon,
-  CalendarCheck2Icon,
   ChartPieIcon,
   PackageSearchIcon,
   ReceiptTextIcon,
   TrendingUpIcon,
   UsersIcon,
+  ShieldCheckIcon,
 } from 'lucide-react'
 
 const FONCTIONNALITES = [
   {
-    i: ReceiptTextIcon,
-    titre: 'Commandes',
+    i: ShieldCheckIcon,
+    titre: 'Caisse 100% fiable',
     texte:
-      'De la salle à la cuisine en une seconde. Chaque ticket circule, rien ne se perd, même en plein rush.',
+      "Chaque franc est tracé. Finies les erreurs de calcul, les annulations frauduleuses et les écarts en fin de journée.",
   },
   {
     i: PackageSearchIcon,
-    titre: 'Stocks',
+    titre: 'Zéro vol en stock',
     texte:
-      "Seuils d'alerte, DLC et réappro suggéré. L'app signale ce qui manque avant que ça manque.",
-  },
-  {
-    i: ChartPieIcon,
-    titre: 'Dashboard',
-    texte:
-      "Chiffre d'affaires, panier moyen, objectif du jour : le pilotage en temps réel, sans tableur.",
-  },
-  {
-    i: CalendarCheck2Icon,
-    titre: 'Réservations',
-    texte:
-      "Plan de salle, créneaux et file d'attente. Plus de double réservation, plus de tables perdues.",
-  },
-  {
-    i: UsersIcon,
-    titre: 'Équipe',
-    texte:
-      'Pointage, planning et formation par poste. Chacun sait quoi faire et qui tient la caisse.',
+      "Vous savez exactement ce qui entre, ce qui sort, et ce qui devrait rester. L'app signale les pertes avant qu'elles ne s'accumulent.",
   },
   {
     i: TrendingUpIcon,
-    titre: 'Statistiques',
+    titre: 'Marges maîtrisées',
     texte:
-      "Food cost, marges, affluence, performance : les décisions reposent sur des chiffres, pas sur l'instinct.",
+      "Suivez la rentabilité de chaque plat. Prenez des décisions basées sur vos vraies marges, pas sur des estimations.",
+  },
+  {
+    i: ReceiptTextIcon,
+    titre: 'Service sans erreur',
+    texte:
+      "Finis les tickets perdus ou illisibles. La cuisine reçoit exactement ce que le client a demandé, instantanément.",
+  },
+  {
+    i: UsersIcon,
+    titre: 'Responsabilité',
+    texte:
+      "Chaque action est signée par un PIN. Vous savez exactement qui a encaissé, qui a annulé, et qui était présent.",
+  },
+  {
+    i: ChartPieIcon,
+    titre: 'Vision claire',
+    texte:
+      "Chiffre d'affaires, panier moyen, affluence : pilotez votre activité de n'importe où, avec des données en temps réel.",
   },
 ]
 
@@ -57,14 +57,13 @@ export function Fonctionnalites() {
       <div className="relative mx-auto max-w-5xl px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-[11px] font-medium tracking-[0.22em] text-primary uppercase">
-            Fonctionnalités
+            Reprenez le contrôle
           </p>
           <h2 className="font-display mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            Tout le restaurant dans une seule app
+            Arrêtez de naviguer à vue
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground text-pretty sm:text-base">
-            Pas de puzzle d'outils à faire tenir ensemble. Alba couvre chaque
-            poste du service, avec des données qui circulent toutes seules.
+            Alba transforme votre restaurant en une machine bien huilée où chaque ressource compte, et chaque perte est identifiée.
           </p>
         </div>
 
@@ -95,23 +94,23 @@ export function Fonctionnalites() {
 
 const ROLES = [
   {
-    role: 'Le client',
-    titre: 'Commande et fidélité',
-    texte:
-      'Commande en ligne, retrait ou livraison, et une Carte de Fidélité qui engrange des points à chaque passage.',
-  },
-  {
     role: 'Le gérant',
-    titre: 'Le restaurant dans une main',
+    titre: "Tranquillité d'esprit absolue",
     texte:
-      'Caisse, cuisine, stock, hygiène, équipe, pilotage : le back-office complet, même sans connexion.',
+      'Gérez tout depuis votre téléphone. Caisse, marges, stock, hygiène : le contrôle de votre affaire dans votre poche.',
     enEvidence: true,
   },
   {
-    role: 'Le super admin',
-    titre: 'Vue sur le parc',
+    role: "L'équipe",
+    titre: 'Fini le stress en plein rush',
     texte:
-      "Multi-établissements, abonnements et revenus : chaque restaurant de la plateforme au même endroit.",
+      "Chacun sait exactement ce qu'il doit faire. Les commandes passent seules, le service s'accélère sans tension.",
+  },
+  {
+    role: 'Le client',
+    titre: 'Une expérience qui fidélise',
+    texte:
+      "Servi plus vite, sans erreur, et récompensé automatiquement par la Carte de Fidélité à chaque passage.",
   },
 ]
 
@@ -121,14 +120,13 @@ export function ParRoles() {
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-[11px] font-medium tracking-[0.22em] text-primary uppercase">
-            Un compte par métier
+            Gagnant sur toute la ligne
           </p>
           <h2 className="font-display mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            Une plateforme, trois expériences
+            Tout le monde y gagne
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground text-pretty sm:text-base">
-            Chaque profil voit exactement ce dont il a besoin — ni plus, ni
-            moins. Les permissions sont verrouillées au serveur.
+            L'excellence ne s'arrête pas à la gestion. De la cuisine à la table, l'expérience globale s'améliore et tout le monde en ressort gagnant.
           </p>
         </div>
 

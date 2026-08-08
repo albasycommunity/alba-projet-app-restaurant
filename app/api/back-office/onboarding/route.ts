@@ -35,9 +35,10 @@ export async function GET(req: NextRequest) {
 
   const platCree = req.nextUrl.searchParams.get('platCree') === '1'
   const venteEncaisee = req.nextUrl.searchParams.get('venteEncaisee') === '1'
+  const stockConfigure = req.nextUrl.searchParams.get('stockConfigure') === '1'
 
   return NextResponse.json(
-    await progressionOnboarding(restaurantId, { platCree, venteEncaisee }),
+    await progressionOnboarding(restaurantId, { platCree, venteEncaisee, stockConfigure }),
   )
 }
 

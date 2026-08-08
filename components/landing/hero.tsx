@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import {
   ArrowRightIcon,
@@ -12,9 +13,15 @@ import {
   SparklesIcon,
   WifiOffIcon,
   ZapIcon,
+  ShieldCheckIcon,
+  TrendingUpIcon,
+  EyeIcon,
+  ClockIcon,
+  BarChart3Icon,
 } from 'lucide-react'
 import { destinationPour } from '@/lib/auth'
 import { useAuth } from '@/lib/auth-contexte'
+import { sfx } from '@/lib/sounds'
 
 const BARS = [34, 48, 42, 62, 55, 74, 92]
 
@@ -171,6 +178,15 @@ export function MockupPilotage() {
 
 export function Hero() {
   const { utilisateur } = useAuth()
+
+  useEffect(() => {
+    // Petit délai pour synchroniser le son avec l'animation d'entrée
+    const timer = setTimeout(() => {
+      sfx?.playPop()
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [])
+
   return (
     <section className="relative overflow-hidden">
       {/* Ambiance de fond : grille + halo + arches filigrane */}
@@ -188,30 +204,31 @@ export function Hero() {
       </div>
 
       <div className="relative mx-auto max-w-5xl px-4 pt-16 text-center sm:px-6 sm:pt-24">
-        <div className="animate-rise inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3.5 py-1.5 text-xs font-medium text-primary">
+        <div className="animate-pop-in inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3.5 py-1.5 text-xs font-medium text-primary">
           <SparklesIcon className="size-3.5" />
-          Pensé pour le terrain sénégalais
+          La solution anti-fuite pour les restaurants au Sénégal
           <span className="size-1.5 animate-haleine rounded-full bg-primary" />
         </div>
 
-        <h1 className="animate-rise font-display mt-6 text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl [animation-delay:80ms]">
-          L'excellence culinaire,
+        <h1 className="animate-pop-in font-display mt-6 text-4xl leading-[1.05] font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl delay-300">
+          Moins de pertes.
           <br />
-          <span className="text-ember">simplifiée.</span>
+          <span className="text-ember">Plus de bénéfices.</span>
         </h1>
 
-        <p className="animate-rise mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground text-pretty sm:text-base [animation-delay:160ms]">
-          Caisse, cuisine, stock, hygiène, équipe et fidélité dans une seule
-          app — qui continue de tourner quand le réseau s'arrête. Alba est le
-          poste de travail complet du restaurant, pensé pour ne jamais
-          interrompre le service.
+        <p className="animate-pop-in mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground text-pretty sm:text-base [animation-delay:400ms]">
+          Vos serveurs font des erreurs ? Votre caisse n'est pas fiable ?
+          Vous ne connaissez pas la valeur exacte de votre stock ?
+          Alba verrouille votre gestion : supprimez les vols, contrôlez vos marges et dormez enfin sur vos deux oreilles.
         </p>
 
-        <div className="animate-rise mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row [animation-delay:240ms]">
+        <div className="animate-pop-in mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row [animation-delay:500ms]">
           {utilisateur ? (
             <Link
               href={destinationPour(utilisateur.role, utilisateur.permissions)}
-              className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.02] hover:bg-primary/90 active:scale-[0.98] sm:w-auto"
+              onMouseEnter={() => sfx?.playHover()}
+              onClick={() => sfx?.playClick()}
+              className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] animate-glow-pulse transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.02] hover:bg-primary/90 active:scale-[0.98] sm:w-auto"
             >
               <LayoutGridIcon className="size-4" />
               Ouvrir mon espace
@@ -221,13 +238,17 @@ export function Hero() {
             <>
               <Link
                 href="/register?mode=restaurant"
-                className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.02] hover:bg-primary/90 active:scale-[0.98] sm:w-auto"
+                onMouseEnter={() => sfx?.playHover()}
+                onClick={() => sfx?.playClick()}
+                className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-[0_12px_32px_-12px_oklch(0.65_0.16_38/0.9)] animate-glow-pulse transition-all duration-300 ease-[var(--ease-spring)] hover:scale-[1.02] hover:bg-primary/90 active:scale-[0.98] sm:w-auto"
               >
                 Commencer
                 <ArrowRightIcon className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
               </Link>
               <Link
                 href="/login"
+                onMouseEnter={() => sfx?.playHover()}
+                onClick={() => sfx?.playClick()}
                 className="glass flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border px-6 text-sm font-medium text-foreground transition-all duration-300 ease-[var(--ease-spring)] hover:border-primary/35 hover:bg-primary/8 sm:w-auto"
               >
                 Se connecter
@@ -236,12 +257,14 @@ export function Hero() {
           )}
         </div>
 
-        <p className="animate-rise mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground [animation-delay:300ms]">
+        <p className="animate-pop-in mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground [animation-delay:600ms]">
           <WifiOffIcon className="size-3.5 text-primary/70" />
           Offline-first : le service continue, la synchro attend son tour.
         </p>
 
-        <MockupPilotage />
+        <div className="animate-pop-in [animation-delay:700ms]">
+          <MockupPilotage />
+        </div>
       </div>
     </section>
   )
@@ -250,17 +273,17 @@ export function Hero() {
 /** Bandeau « équipé pour chaque service » — les postes couverts. */
 export function BandeServices() {
   const services = [
-    { i: ReceiptTextIcon, l: 'Caisse' },
-    { i: FlameIcon, l: 'Cuisine' },
-    { i: PackageSearchIcon, l: 'Stock' },
-    { i: BellRingIcon, l: 'Réservations' },
-    { i: ZapIcon, l: 'Pilotage' },
+    { i: ShieldCheckIcon, l: 'Caisse inviolable' },
+    { i: TrendingUpIcon, l: 'Marges sous contrôle' },
+    { i: EyeIcon, l: 'Zéro vol en stock' },
+    { i: ClockIcon, l: 'Service sans erreur' },
+    { i: BarChart3Icon, l: 'Chiffres en temps réel' },
   ]
   return (
     <section className="relative border-y border-border/60 bg-card/30 py-10">
       <div className="mx-auto flex max-w-5xl flex-col items-center gap-6 px-4 sm:px-6">
         <p className="text-[11px] font-medium tracking-[0.22em] text-muted-foreground uppercase">
-          Un poste de travail par service
+          Des résultats immédiats
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2.5">
           {services.map(({ i: I, l }) => (

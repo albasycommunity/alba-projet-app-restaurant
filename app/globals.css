@@ -46,6 +46,10 @@
 
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-organic: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-pop-in: pop-in 0.7s var(--ease-spring) forwards;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-glow-pulse: glow-pulse 3s ease-in-out infinite;
 }
 
 /* Mode sombre par défaut — pensé pour les écrans OLED et la cuisine */
@@ -542,5 +546,39 @@ details.faq[open] .faq-icone {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  *,
+  *::before,
+  .delay-300 {
+    animation-delay: 300ms;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px -3px var(--primary);
+  }
+  50% {
+    box-shadow: 0 0 30px 5px var(--primary);
   }
 }
