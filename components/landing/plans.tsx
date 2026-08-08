@@ -188,7 +188,7 @@ export function Plans() {
                       : 'border border-border bg-secondary/50 text-foreground hover:border-primary/35 hover:bg-primary/8',
                   )}
                 >
-                  Commencer gratuitement
+                  Commencer
                   <ArrowRightIcon className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
                 </Link>
               </div>

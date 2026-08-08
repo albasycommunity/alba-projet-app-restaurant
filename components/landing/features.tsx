@@ -162,10 +162,10 @@ export function ParRoles() {
 
         <div className="mt-10 text-center">
           <Link
-            href="#plans"
+            href="/register?mode=restaurant"
             className="group inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-primary/80"
           >
-            Commencer gratuitement
+            Commencer
             <ArrowRightIcon className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
           </Link>
         </div>

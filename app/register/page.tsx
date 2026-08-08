@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import {
   ArrowRightIcon,
@@ -38,7 +38,6 @@ function enregistrerIntention(palier: string | null, plan: string | null) {
 }
 
 function PageInscription() {
-  const router = useRouter()
   const params = useSearchParams()
   const suivant = params.get('suivant')
   // Un CTA venu de la grille de plans amène le mode restaurant
@@ -97,7 +96,9 @@ function PageInscription() {
         donnees.compte === 'restaurant'
           ? donnees.destination
           : `login?inscrit=1${suivant ? `&suivant=${encodeURIComponent(suivant)}` : ''}`
-      window.setTimeout(() => router.push(cible), 2000)
+      // Rechargement complet : le layout de l'espace restaurant remonte et
+      // le guide de découverte s'ouvre automatiquement à l'atterrissage.
+      window.setTimeout(() => window.location.assign(cible), 2000)
     } catch {
       setErreur('Le serveur ne répond pas. Réessaie dans un instant.')
     } finally {

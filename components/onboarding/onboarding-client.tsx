@@ -146,7 +146,9 @@ export function OnboardingDecouverte() {
   const [guideOuvert, setGuideOuvert] = useState(false)
   const [felicites, setFelicites] = useState(false)
   const [dejaFerme, setDejaFerme] = useState(false)
+  const [presente, setPresente] = useState(false)
   const fete = useRef(false)
+  const redirectionPlans = useRef<number | null>(null)
 
   const admin = utilisateur?.role === Role.RESTAURANT_ADMIN
   const platCree = plats.some((p) => p.cree)
@@ -201,15 +203,21 @@ export function OnboardingDecouverte() {
 
   // Modal d'entrée : à l'atterrissage sur le back-office, une seule fois
   // par session (le parcours ne bloque jamais rien — il s'ouvre en douce).
+  // Une fois présenté, on ne rouvre plus tout seul : la bande de rappel
+  // (« Reprendre le guide ») prend le relais.
   useEffect(() => {
     if (pathname !== '/back-office') return
-    if (!enCours || guideOuvert || felicites || dejaFerme) return
-    const id = window.setTimeout(() => setGuideOuvert(true), 600)
+    if (!enCours || guideOuvert || felicites || dejaFerme || presente) return
+    const id = window.setTimeout(() => {
+      setPresente(true)
+      setGuideOuvert(true)
+    }, 600)
     return () => window.clearTimeout(id)
-  }, [pathname, enCours, guideOuvert, felicites, dejaFerme])
+  }, [pathname, enCours, guideOuvert, felicites, dejaFerme, presente])
 
   // Moment de complétion : la 5ᵉ étape tombe, où que soit le gérant —
-  // une seule fois par session, jamais deux.
+  // une seule fois par session, jamais deux. Après le « Bravo », on
+  // l'emmène automatiquement vers les plans (le but du parcours).
   useEffect(() => {
     if (!visible || accomplies < TOTAL_ETAPES_ONBOARDING) return
     setGuideOuvert(false)
@@ -222,7 +230,29 @@ export function OnboardingDecouverte() {
       // pas de sessionStorage : on fête quand même une fois
     }
     setFelicites(true)
-  }, [visible, accomplies])
+    redirectionPlans.current = window.setTimeout(
+      () => router.push('/abonnement/renouveler?source=parcours'),
+      3500,
+    )
+  }, [visible, accomplies, router])
+
+  useEffect(
+    () => () => {
+      if (redirectionPlans.current !== null) {
+        window.clearTimeout(redirectionPlans.current)
+      }
+    },
+    [],
+  )
+
+  /** Fermer le Bravo sans attendre la redirection automatique. */
+  function fermerFelicites() {
+    if (redirectionPlans.current !== null) {
+      window.clearTimeout(redirectionPlans.current)
+      redirectionPlans.current = null
+    }
+    setFelicites(false)
+  }
 
   function fermerTemporairement() {
     setDejaFerme(true)
@@ -285,7 +315,8 @@ export function OnboardingDecouverte() {
     router.push(cible)
   }
 
-  const rappelVisible = pathname === '/back-office' && enCours && dejaFerme
+  const rappelVisible =
+    pathname === '/back-office' && enCours && (dejaFerme || presente)
 
   if (!admin) return null
 
@@ -463,28 +494,32 @@ export function OnboardingDecouverte() {
         </div>
       </Sheet>
 
-      {/* Moment de complétion — une seule fois, jamais deux. */}
+      {/* Moment de complétion — une seule fois, jamais deux. L'essentiel :
+          les plans à choisir maintenant que le parcours est terminé. */}
       <Sheet
         ouvert={felicites}
-        onFermer={() => setFelicites(false)}
+        onFermer={fermerFelicites}
         titre="Bravo, ton restaurant est prêt"
-        sous="Les 5 étapes de découverte sont terminées — la main est à toi."
+        sous="Les 5 étapes de découverte sont terminées — à toi de choisir ton plan."
         pied={
           <div className="flex flex-col gap-2">
-            <Link
-              href="/caisse"
-              onClick={() => setFelicites(false)}
+            <button
+              type="button"
+              onClick={() => {
+                fermerFelicites()
+                router.push('/abonnement/renouveler?source=parcours')
+              }}
               className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary font-medium text-primary-foreground transition-all duration-300 ease-[var(--ease-spring)] active:scale-[0.98]"
             >
-              Ouvrir la caisse
+              Choisir mon plan
               <ArrowRightIcon className="size-4" />
-            </Link>
+            </button>
             <Link
-              href="/pilotage"
-              onClick={() => setFelicites(false)}
+              href="/caisse"
+              onClick={fermerFelicites}
               className="flex h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
             >
-              Voir mes chiffres
+              Ouvrir la caisse
             </Link>
           </div>
         }
