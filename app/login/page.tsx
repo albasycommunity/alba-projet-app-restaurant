@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import {
   ArrowRightIcon,
-  BadgeCheckIcon,
   CheckCircle2Icon,
   EyeIcon,
   EyeOffIcon,
@@ -41,27 +40,12 @@ function PanneauMarque() {
           Connexion
         </p>
         <h1 className="font-display mt-4 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-          Un compte pour chaque métier, une seule plateforme.
+          Ravi de vous revoir sur Alba.
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground text-pretty">
-          Le super admin gère la plateforme, le chef de restaurant pilote son
-          établissement, le client commande et cumule sa Carte de Fidélité.
+          Connectez-vous à votre espace pour reprendre le contrôle de votre activité. 
+          Que vous soyez au restaurant ou en déplacement, vos données sont sécurisées et synchronisées.
         </p>
-
-        <div className="mt-8 flex flex-col gap-2">
-          <span className="flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3.5 py-1.5 text-xs font-medium text-primary">
-            <BadgeCheckIcon className="size-3.5" />
-            Super admin — vue sur le parc
-          </span>
-          <span className="flex w-fit items-center gap-2 rounded-full border border-success/25 bg-success/10 px-3.5 py-1.5 text-xs font-medium text-success">
-            <BadgeCheckIcon className="size-3.5" />
-            Admin restaurant — son back-office
-          </span>
-          <span className="flex w-fit items-center gap-2 rounded-full border border-warning/25 bg-warning/10 px-3.5 py-1.5 text-xs font-medium text-warning">
-            <BadgeCheckIcon className="size-3.5" />
-            Client — menu et fidélité
-          </span>
-        </div>
       </div>
 
       <div className="relative flex items-end justify-between gap-4">
