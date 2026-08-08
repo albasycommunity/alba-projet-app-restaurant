@@ -18,7 +18,7 @@ create policy "Les membres du restaurant gèrent les décaissements"
   for all
   using (
     restaurant_id in (
-      select restaurant_id from utilisateurs where id = auth.uid()
+      select restaurant_id from utilisateurs where id = auth.uid()::text
     )
   );
 
